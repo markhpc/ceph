@@ -7333,6 +7333,13 @@ void OSD::handle_pg_create(OpRequestRef op)
     bool mapped = osdmap->get_primary_shard(on, &pgid);
     assert(mapped);
 
+    {
+      RWLock::RLocker l(pg_map_lock);
+      for (auto &p : pg_map) {
+       dout(30) << "pg_map: " << p.first << " = " << p.second << dendl;
+      }
+    }
+
     // does it already exist?
     if (_have_pg(pgid)) {
       dout(10) << "mkpg " << pgid << "  already exists, skipping" << dendl;
