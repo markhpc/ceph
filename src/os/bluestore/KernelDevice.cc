@@ -520,7 +520,8 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
   return r < 0 ? r : 0;
 }
 
-int KernelDevice::read_buffered(uint64_t off, uint64_t len, char *buf)
+int KernelDevice::read(uint64_t off, uint64_t len, char *buf,
+                       bool buffered)
 {
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << dendl;
@@ -532,7 +533,7 @@ int KernelDevice::read_buffered(uint64_t off, uint64_t len, char *buf)
   char *t = buf;
   uint64_t left = len;
   while (left > 0) {
-    r = ::pread(fd_buffered, t, left, off);
+    r = ::pread(buffered ? fd_buffered : fd_direct, t, left, off);
     if (r < 0) {
       r = -errno;
       goto out;

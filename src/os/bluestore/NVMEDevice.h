@@ -231,7 +231,7 @@ class NVMEDevice : public BlockDevice {
   int aio_zero(uint64_t off, uint64_t len,
                IOContext *ioc) override;
   int flush() override;
-  int read_buffered(uint64_t off, uint64_t len, char *buf) override;
+  int read(uint64_t off, uint64_t len, char *buf, bool buffered) override;
 
   // for managing buffered readers/writers
   int invalidate_cache(uint64_t off, uint64_t len) override;
