@@ -3081,8 +3081,8 @@ reprotect_and_return_err:
       }
     }
 
-    assert(!ictx->aio_work_queue->writes_suspended() ||
-           ictx->aio_work_queue->writes_empty());
+//    assert(!ictx->aio_work_queue->writes_suspended() ||
+//           ictx->aio_work_queue->writes_empty());
     ictx->aio_work_queue->drain();
     ictx->cancel_async_requests();
     ictx->flush_async_operations();
