@@ -272,7 +272,7 @@ int LevelDBStore::get(const string &prefix,
   int r = 0;
   string value, k;
   leveldb::Status s;
-  k = combine_strings(prefix, key)
+  k = combine_strings(prefix, key);
   s = db->Get(leveldb::ReadOptions(), leveldb::Slice(k), &value);
   if (s.ok()) {
     out->append(value);
