@@ -265,9 +265,9 @@ int LevelDBStore::get(
 
 int LevelDBStore::get(const string &prefix, 
 		  const string &key,
-		  bufferlist *value)
+		  bufferlist *out)
 {
-  assert(value && (value->length() == 0));
+  assert(out && (out->length() == 0));
   utime_t start = ceph_clock_now(g_ceph_context);
   int r = 0;
   leveldb::ReadOptions options;
@@ -275,7 +275,7 @@ int LevelDBStore::get(const string &prefix,
   std::string bound = combine_strings(prefix, key);
   auto status = db->Get(options, bound, &value);
   if (status.ok()) {
-    value->append(value);
+    out->append(value);
   } else if (!status.IsNotFound()) {
     r = -ENOENT;
   }
