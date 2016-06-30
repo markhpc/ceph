@@ -775,11 +775,9 @@ int BlueFS::_read_random(
 	off + l > h->file->fnode.size) {
       l = h->file->fnode.size - off;
     }
-    dout(20) << __func__ << " read buffered 0x"
-             << std::hex << x_off << "~" << l << std::dec
-             << " of " << *p << dendl;
-    int r = bdev[p->bdev]->read_random(p->offset + x_off, l, out,
-				       g_conf->bluestore_bluefs_buffered_io);
+    dout(20) << __func__ << " read buffered " << x_off << "~" << l << " of "
+	       << *p << dendl;
+    int r = bdev[p->bdev]->read_buffered(p->offset + x_off, l, out);
     assert(r == 0);
     off += l;
     len -= l;
