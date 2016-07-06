@@ -6122,7 +6122,7 @@ int BlueStore::_do_write(
   if (length == 0) {
     return 0;
   }
-
+  o->flush();
   uint64_t end = offset + length;
 
   WriteContext wctx;
