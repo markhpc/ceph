@@ -4563,6 +4563,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->state = TransContext::STATE_KV_QUEUED;
       // FIXME: use a per-txc dirty blob list?
       for (auto& o : txc->onodes) {
+        std::unique_lock<std::mutex> lck(o->blobmap_lock);
 	for (auto& p : o->blob_map.blob_map) {
 	  p.bc.finish_write(txc->seq);
 	}
@@ -6082,6 +6083,7 @@ void BlueStore::_wctx_finish(
       dout(20) << __func__ << " rm blob " << *b << dendl;
       txc->statfs_delta.compressed() -= b->blob.get_compressed_payload_length();
       if (l.blob >= 0) {
+        std::unique_lock<std::mutex> lck(o->blobmap_lock);
 	o->blob_map.erase(b);
       } else {
 	o->bnode->blob_map.erase(b);
