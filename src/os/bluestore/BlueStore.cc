@@ -6131,7 +6131,8 @@ int BlueStore::_do_write(
     dout(20) << __func__ << " will do buffered write" << dendl;
     wctx.buffered = true;
   }
-  wctx.csum_order = MAX(block_size_order, o->onode.get_preferred_csum_order());
+  // [DNM] use old csum_order behavior
+  wctx.csum_order = block_size_order;
 
   // compression parameters
   unsigned alloc_hints = o->onode.alloc_hint_flags;
