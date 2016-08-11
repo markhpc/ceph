@@ -378,6 +378,88 @@ namespace buffer CEPH_BUFFER_API {
       }
     };
 
+    class appender {
+    protected:
+      list *pls;
+      size_t size;
+      ptr bp;
+      char *pos, *end;
+
+    public:
+      appender(bufferlist *l, size_t s) : pls(l), size(s) {
+	prepare_buffer();
+      }
+      appender(appender&& o)
+	: pls(o.pls), size(o.size),
+	  bp(std::move(o.bp)),
+	  pos(o.pos), end(o.end) {
+      }
+      ~appender() {
+	flush();
+      }
+
+      // no copying
+      appender(const appender& other) = delete;
+      appender& operator=(const appender& other) = delete;
+
+      void prepare_buffer(size_t at_least = 0) {
+	bp = buffer::create(std::max(size, at_least));
+	pos = bp.c_str();
+	end = pos + bp.length();
+      }
+
+      void flush() {
+	if (bp.length()) {
+	  bp.set_length(pos - bp.c_str());
+	  pls->append(bp);
+	  bp = ptr();
+	}
+      }
+    };
+
+    class safe_appender : public appender {
+    public:
+      safe_appender(bufferlist *l, size_t s) : appender(l, s) {}
+      void append(char *p, size_t l) {
+	if (pos + l > end) {
+	  flush();
+	  prepare_buffer(l);
+	}
+	memcpy(pos, p, l);
+	pos += l;
+      }
+      template<typename T>
+      void append_v(T v) {
+	if (pos + sizeof(T) > end) {
+	  flush();
+	  prepare_buffer();
+	}
+	*(T*)pos = v;
+	pos += sizeof(T);
+      }
+    };
+
+    class unsafe_appender : public appender {
+    public:
+      unsafe_appender(bufferlist *l, size_t s) : appender(l, s) {}
+      void append(char *p, size_t l) {
+	memcpy(pos, p, l);
+	pos += l;
+      }
+      template<typename T>
+      void append_v(T v) {
+	*(T*)pos = v;
+	pos += sizeof(T);
+      }
+    };
+
+    unsafe_appender get_unsafe_appender(size_t len) {
+      return unsafe_appender(this, len);
+    }
+    safe_appender get_safe_appender(size_t len=4096) {
+      return safe_appender(this, len);
+    }
+
   private:
     mutable iterator last_p;
     int zero_copy_to_fd(int fd) const;
