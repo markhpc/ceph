@@ -2269,6 +2269,80 @@ TEST(BufferList, append_zero) {
   EXPECT_EQ('\0', bl[1]);
 }
 
+TEST(BufferList, appender_bench) {
+  unsigned long long ma = 1024 * 16, mb = 65536;
+  cout << "appending " << (ma * mb) << " bytes" << std::endl;
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      for (unsigned b = 0; b < mb; ++b) {
+	bl.append((char*)&v, sizeof(v));
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::append " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::safe_appender ap = bl.get_safe_appender();
+      for (unsigned b = 0; b < mb; ++b) {
+	ap.append((char*)&v, sizeof(v));
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::safe_appender::append " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::safe_appender ap = bl.get_safe_appender();
+      for (unsigned b = 0; b < mb; ++b) {
+	ap.append_v(v);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::safe_appender::append_v " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      for (unsigned b = 0; b < mb; ++b) {
+	ap.append((char*)&v, sizeof(v));
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::unsafe_appender::append " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      for (unsigned b = 0; b < mb; ++b) {
+	ap.append_v(v);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::unsafe_appender::append_v " << dur << std::endl;
+  }
+}
+
+TEST(BufferList, safe_appender) {
+  bufferlist bl;
+  bufferlist::appender a = bl.get_safe_appender();
+}
+
 TEST(BufferList, operator_brackets) {
   bufferlist bl;
   EXPECT_THROW(bl[1], buffer::end_of_buffer);
@@ -2954,6 +3028,7 @@ TEST(BufferHash, all) {
     EXPECT_EQ((unsigned)0xB3109EBF, hash.digest());
   }
 }
+
 
 /*
  * Local Variables:
