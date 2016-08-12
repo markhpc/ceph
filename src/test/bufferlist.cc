@@ -2289,6 +2289,19 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
+      for (unsigned b = 0; b < mb; ++b) {
+	::encode(v, bl);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list encode " << dur << std::endl;
+  }
+
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
       bufferlist::safe_appender ap = bl.get_safe_appender();
       for (unsigned b = 0; b < mb; ++b) {
 	ap.append((char*)&v, sizeof(v));
@@ -2315,6 +2328,20 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
+      bufferlist::safe_appender ap = bl.get_safe_appender();
+      for (unsigned b = 0; b < mb; ++b) {
+	::encode(v, ap);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::safe_appender encode " << dur << std::endl;
+  }
+
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
       bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
 	ap.append((char*)&v, sizeof(v));
@@ -2335,6 +2362,19 @@ TEST(BufferList, appender_bench) {
     }
     utime_t dur = ceph_clock_now(NULL) - start;
     cout << "buffer::list::unsafe_appender::append_v " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      for (unsigned b = 0; b < mb; ++b) {
+	::encode(v, ap);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::unsafe_appender encode " << dur << std::endl;
   }
 }
 

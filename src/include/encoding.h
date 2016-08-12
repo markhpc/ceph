@@ -46,10 +46,10 @@ using namespace ceph;
 // --------------------------------------
 // base types
 
-template<class T>
-inline void encode_raw(const T& t, bufferlist& bl)
+template<class T, class A>
+inline void encode_raw(const T& t, A& ap)
 {
-  bl.append((char*)&t, sizeof(t));
+  ap.append((char*)&t, sizeof(t));
 }
 template<class T>
 inline void decode_raw(T& t, bufferlist::iterator &p)
@@ -59,6 +59,8 @@ inline void decode_raw(T& t, bufferlist::iterator &p)
 
 #define WRITE_RAW_ENCODER(type)						\
   inline void encode(const type &v, bufferlist& bl, uint64_t features=0) { encode_raw(v, bl); } \
+  inline void encode(const type &v, bufferlist::safe_appender& ap, uint64_t features=0) { encode_raw(v, ap); } \
+  inline void encode(const type &v, bufferlist::unsafe_appender& ap, uint64_t features=0) { encode_raw(v, ap); } \
   inline void decode(type &v, bufferlist::iterator& p) { __ASSERT_FUNCTION decode_raw(v, p); }
 
 WRITE_RAW_ENCODER(__u8)
@@ -93,6 +95,16 @@ inline void decode(bool &v, bufferlist::iterator& p) {
     ceph_##etype e;					                \
     e = v;                                                              \
     encode_raw(e, bl);							\
+  }									\
+  inline void encode(type v, bufferlist::safe_appender& ap, uint64_t features=0) {	\
+    ceph_##etype e;					                \
+    e = v;                                                              \
+    encode_raw(e, ap);							\
+  }									\
+  inline void encode(type v, bufferlist::unsafe_appender& ap, uint64_t features=0) {	\
+    ceph_##etype e;					                \
+    e = v;                                                              \
+    encode_raw(e, ap);							\
   }									\
   inline void decode(type &v, bufferlist::iterator& p) {		\
     ceph_##etype e;							\
