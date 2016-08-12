@@ -383,12 +383,20 @@ namespace buffer CEPH_BUFFER_API {
       list *pls;
       size_t size;
       ptr bp;
-      char *pos, *end;
+      char *pos;
+      union {
+	char *end;
+	appender *parent;
+      };
 
     public:
       appender(bufferlist *l, size_t s) : pls(l), size(s) {
 	prepare_buffer();
       }
+      appender(appender *p)
+	: pls(nullptr),
+	  pos(p->pos),
+	  parent(p) {}
       appender(appender&& o)
 	: pls(o.pls), size(o.size),
 	  bp(std::move(o.bp)),
@@ -402,6 +410,7 @@ namespace buffer CEPH_BUFFER_API {
       appender(const appender& other) = delete;
       appender& operator=(const appender& other) = delete;
 
+    protected:
       void prepare_buffer(size_t at_least = 0) {
 	bp = buffer::create(std::max(size, at_least));
 	pos = bp.c_str();
@@ -409,11 +418,30 @@ namespace buffer CEPH_BUFFER_API {
       }
 
       void flush() {
-	if (bp.length()) {
-	  bp.set_length(pos - bp.c_str());
-	  pls->append(bp);
-	  bp = ptr();
+	if (pls) {
+	  if (bp.length()) {
+	    bp.set_length(pos - bp.c_str());
+	    pls->append(bp);
+	    bp = ptr();
+	  }
+	} else {
+	  parent->pos = pos;
 	}
+      }
+    };
+
+    class unsafe_appender : public appender {
+    public:
+      unsafe_appender(bufferlist *l, size_t s) : appender(l, s) {}
+      unsafe_appender(appender *parent) : appender(parent) {}
+      void append(char *p, size_t l) {
+	memcpy(pos, p, l);
+	pos += l;
+      }
+      template<typename T>
+      void append_v(T v) {
+	*(T*)pos = v;
+	pos += sizeof(T);
       }
     };
 
@@ -437,19 +465,12 @@ namespace buffer CEPH_BUFFER_API {
 	*(T*)pos = v;
 	pos += sizeof(T);
       }
-    };
-
-    class unsafe_appender : public appender {
-    public:
-      unsafe_appender(bufferlist *l, size_t s) : appender(l, s) {}
-      void append(char *p, size_t l) {
-	memcpy(pos, p, l);
-	pos += l;
-      }
-      template<typename T>
-      void append_v(T v) {
-	*(T*)pos = v;
-	pos += sizeof(T);
+      unsafe_appender reserve(size_t s) {
+	if (pos + s > end) {
+	  flush();
+	  prepare_buffer(s);
+	}
+	return unsafe_appender(this);
       }
     };
 
@@ -676,7 +697,7 @@ namespace buffer CEPH_BUFFER_API {
     int write_fd_zero_copy(int fd) const;
     void prepare_iov(std::vector<iovec> *piov) const;
     uint32_t crc32c(uint32_t crc) const;
-	void invalidate_crc();
+    void invalidate_crc();
   };
 
   /*

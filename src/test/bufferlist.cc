@@ -2362,6 +2362,35 @@ TEST(BufferList, appender_bench) {
       bufferlist bl;
       bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	bufferlist::unsafe_appender uap = ap.reserve(sizeof(v) * 16);
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+	uap.append((char*)&v, sizeof(v));
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::safe_appender::append (reserve 16) " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
+      for (unsigned b = 0; b < mb; ++b) {
 	ap.append_v(v);
 	ap.append_v(v);
 	ap.append_v(v);
@@ -2382,6 +2411,35 @@ TEST(BufferList, appender_bench) {
     }
     utime_t dur = ceph_clock_now(NULL) - start;
     cout << "buffer::list::safe_appender::append_v " << dur << std::endl;
+  }
+  {
+    utime_t start = ceph_clock_now(NULL);
+    uint64_t v = 123;
+    for (unsigned a = 0; a < ma; ++a) {
+      bufferlist bl;
+      bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
+      for (unsigned b = 0; b < mb; ++b) {
+	bufferlist::unsafe_appender uap = ap.reserve(sizeof(v) * 16);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+	uap.append_v(v);
+      }
+    }
+    utime_t dur = ceph_clock_now(NULL) - start;
+    cout << "buffer::list::safe_appender::append_v (reserve 16) " << dur << std::endl;
   }
   {
     utime_t start = ceph_clock_now(NULL);
