@@ -2270,14 +2270,29 @@ TEST(BufferList, append_zero) {
 }
 
 TEST(BufferList, appender_bench) {
-  unsigned long long ma = 1024 * 16, mb = 65536;
-  cout << "appending " << (ma * mb) << " bytes" << std::endl;
+  unsigned long long ma = 16 * 16, mb = 65536;
+  cout << "appending " << 16 * (ma * mb) << " uint64_t's" << std::endl;
   {
     utime_t start = ceph_clock_now(NULL);
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
       for (unsigned b = 0; b < mb; ++b) {
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
+	bl.append((char*)&v, sizeof(v));
 	bl.append((char*)&v, sizeof(v));
       }
     }
@@ -2291,6 +2306,21 @@ TEST(BufferList, appender_bench) {
       bufferlist bl;
       for (unsigned b = 0; b < mb; ++b) {
 	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
+	::encode(v, bl);
       }
     }
     utime_t dur = ceph_clock_now(NULL) - start;
@@ -2302,8 +2332,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::safe_appender ap = bl.get_safe_appender();
+      bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
 	ap.append((char*)&v, sizeof(v));
       }
     }
@@ -2315,8 +2360,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::safe_appender ap = bl.get_safe_appender();
+      bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
 	ap.append_v(v);
       }
     }
@@ -2328,8 +2388,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::safe_appender ap = bl.get_safe_appender();
+      bufferlist::safe_appender ap = bl.get_safe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
 	::encode(v, ap);
       }
     }
@@ -2342,8 +2417,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
+	ap.append((char*)&v, sizeof(v));
 	ap.append((char*)&v, sizeof(v));
       }
     }
@@ -2355,8 +2445,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
+	ap.append_v(v);
 	ap.append_v(v);
       }
     }
@@ -2368,8 +2473,23 @@ TEST(BufferList, appender_bench) {
     uint64_t v = 123;
     for (unsigned a = 0; a < ma; ++a) {
       bufferlist bl;
-      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(sizeof(v) * mb);
+      bufferlist::unsafe_appender ap = bl.get_unsafe_appender(16 * sizeof(v) * mb);
       for (unsigned b = 0; b < mb; ++b) {
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
+	::encode(v, ap);
 	::encode(v, ap);
       }
     }
