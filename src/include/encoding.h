@@ -46,10 +46,20 @@ using namespace ceph;
 // --------------------------------------
 // base types
 
-template<class T, class A>
-inline void encode_raw(const T& t, A& ap)
+template<class T>
+inline void encode_raw(const T& t, bufferlist& bl)
 {
-  ap.append((char*)&t, sizeof(t));
+  bl.append((char*)&t, sizeof(t));
+}
+template<class T>
+inline void encode_raw(const T& t, bufferlist::safe_appender& ap)
+{
+  ap.append_v(t);
+}
+template<class T>
+inline void encode_raw(const T& t, bufferlist::unsafe_appender& ap)
+{
+  ap.append_v(t);
 }
 template<class T>
 inline void decode_raw(T& t, bufferlist::iterator &p)
