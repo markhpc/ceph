@@ -23,7 +23,7 @@ inline void small_encode_varint(T v, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_encode_varint(T v, bufferlist::appender& ap) {
+inline void small_encode_varint(T v, bufferlist::safe_appender& ap) {
   uint8_t byte = v & 0x7f;
   v >>= 7;
   while (v) {
@@ -73,7 +73,7 @@ inline void small_encode_signed_varint(T v, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_encode_signed_varint(T v, bufferlist::appender& ap) {
+inline void small_encode_signed_varint(T v, bufferlist::safe_appender& ap) {
   uint8_t byte = 0;
   if (v < 0) {
     v = -v;
@@ -131,7 +131,7 @@ inline void small_encode_varint_lowz(T v, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_encode_varint_lowz(T v, bufferlist::appender& ap) {
+inline void small_encode_varint_lowz(T v, bufferlist::safe_appender& ap) {
   int lowz = v ? (ctz(v) / 4) : 0;
   uint8_t byte = std::min(lowz, 3);
   v >>= byte * 4;
@@ -190,7 +190,7 @@ inline void small_encode_signed_varint_lowz(T v, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_encode_signed_varint_lowz(T v, bufferlist::appender& ap) {
+inline void small_encode_signed_varint_lowz(T v, bufferlist::safe_appender& ap) {
   uint8_t byte = 0;
   if (v < 0) {
     v = -v;
@@ -278,7 +278,7 @@ inline void small_encode_lba(uint64_t v, bufferlist& bl) {
   ::encode(byte, bl);
 }
 
-inline void small_encode_lba(uint64_t v, bufferlist::appender& ap) {
+inline void small_encode_lba(uint64_t v, bufferlist::safe_appender& ap) {
   int low_zero_nibbles = v ? (int)(ctz(v) / 4) : 0;
   int pos;
   uint32_t word;
