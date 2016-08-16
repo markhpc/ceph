@@ -135,16 +135,17 @@ void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl)
 
   const uint64_t encodes = 16;
   uint64_t pextent_size = sizeof(bluestore_pextent_t);
-  int i = 0;
+  uint64_t i = 0;
   for (; i < n-n%encodes; i+=encodes) {
-    bufferlist::safe_appender ap = bl.get_safe_appender(encodes * pexent_size);
-    for (j; j < encodes; ++j) {
+    bufferlist::safe_appender ap = bl.get_safe_appender(encodes * pextent_size);
+    for (int j = 0; j < encodes; ++j) {
       v[i+j].encode(ap);
     }
   }
   bufferlist::safe_appender ap  = bl.get_safe_appender((n-i) * pextent_size);
   for (; i < n; ++i) {
-    v[i].encode(ap)
+    v[i].encode(ap);
+  }
 //  for (auto e : v) {
 //    e.encode(bl);
 //  }
