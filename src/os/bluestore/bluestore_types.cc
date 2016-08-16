@@ -130,9 +130,24 @@ void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl)
 {
   size_t n = v.size();
   small_encode_varint(n, bl);
-  for (auto e : v) {
-    e.encode(bl);
+
+  #define ROUND_DOWN(x, s) ((x) & ~((s)-1))
+
+  const uint64_t encodes = 16;
+  uint64_t pextent_size = sizeof(bluestore_pextent_t);
+  int i = 0;
+  for (; i < n-n%encodes; i+=encodes) {
+    bufferlist::safe_appender ap = bl.get_safe_appender(encodes * pexent_size);
+    for (j; j < encodes; ++j) {
+      v[i+j].encode(ap);
+    }
   }
+  bufferlist::safe_appender ap  = bl.get_safe_appender((n-i) * pextent_size);
+  for (; i < n; ++i) {
+    v[i].encode(ap)
+//  for (auto e : v) {
+//    e.encode(bl);
+//  }
 }
 
 void small_decode(vector<bluestore_pextent_t>& v, bufferlist::iterator& p)

@@ -132,6 +132,12 @@ struct bluestore_pextent_t : public AllocExtent{
     small_encode_lba(offset, bl);
     small_encode_varint_lowz(length, bl);
   }
+
+  void encode(bufflerlist::appender& ap) {
+    small_encode_lba(offset, ap);
+    small_encode_varint_lowz(length, ap);
+  }
+
   void decode(bufferlist::iterator& p) {
     small_decode_lba(offset, p);
     small_decode_varint_lowz(length, p);
