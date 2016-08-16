@@ -23,6 +23,20 @@ inline void small_encode_varint(T v, bufferlist& bl) {
 }
 
 template<typename T>
+inline void small_encode_varint(T v, bufferlist::appender& ap) {
+  uint8_t byte = v & 0x7f;
+  v >>= 7;
+  while (v) {
+    byte |= 0x80;
+    ::encode(byte, ap);
+    byte = (v & 0x7f);
+    v >>= 7;
+  }
+  ::encode(byte, ap);
+}
+
+
+template<typename T>
 inline void small_decode_varint(T& v, bufferlist::iterator& p)
 {
   uint8_t byte;
@@ -57,6 +71,25 @@ inline void small_encode_signed_varint(T v, bufferlist& bl) {
   }
   ::encode(byte, bl);
 }
+
+template<typename T>
+inline void small_encode_signed_varint(T v, bufferlist::appender& ap) {
+  uint8_t byte = 0;
+  if (v < 0) {
+    v = -v;
+    byte = 1;
+  }
+  byte |= (v & 0x3f) << 1;
+  v >>= 6;
+  while (v) {
+    byte |= 0x80;
+    ::encode(byte, ap);
+    byte = (v & 0x7f);
+    v >>= 7;
+  }
+  ::encode(byte, ap);
+}
+
 
 template<typename T>
 inline void small_decode_signed_varint(T& v, bufferlist::iterator& p)
@@ -95,6 +128,22 @@ inline void small_encode_varint_lowz(T v, bufferlist& bl) {
     v >>= 7;
   }
   ::encode(byte, bl);
+}
+
+template<typename T>
+inline void small_encode_varint_lowz(T v, bufferlist::appender& ap) {
+  int lowz = v ? (ctz(v) / 4) : 0;
+  uint8_t byte = std::min(lowz, 3);
+  v >>= byte * 4;
+  byte |= (((uint8_t)v << 2) & 0x7c);
+  v >>= 5;
+  while (v) {
+    byte |= 0x80;
+    ::encode(byte, ap);
+    byte = (v & 0x7f);
+    v >>= 7;
+  }
+  ::encode(byte, ap);
 }
 
 template<typename T>
@@ -139,6 +188,29 @@ inline void small_encode_signed_varint_lowz(T v, bufferlist& bl) {
   }
   ::encode(byte, bl);
 }
+
+template<typename T>
+inline void small_encode_signed_varint_lowz(T v, bufferlist::appender& ap) {
+  uint8_t byte = 0;
+  if (v < 0) {
+    v = -v;
+    byte = 1;
+  }
+  int lowz = v ? (ctz(v) / 4) : 0;
+  lowz = std::min(lowz, 3);
+  byte |= lowz << 1;
+  v >>= lowz * 4;
+  byte |= (((uint8_t)v << 3) & 0x78);
+  v >>= 4;
+  while (v) {
+    byte |= 0x80;
+    ::encode(byte, ap);
+    byte = (v & 0x7f);
+    v >>= 7;
+  }
+  ::encode(byte, ap);
+}
+
 
 template<typename T>
 inline void small_decode_signed_varint_lowz(T& v, bufferlist::iterator& p)
@@ -206,6 +278,43 @@ inline void small_encode_lba(uint64_t v, bufferlist& bl) {
   ::encode(byte, bl);
 }
 
+inline void small_encode_lba(uint64_t v, bufferlist::appender& ap) {
+  int low_zero_nibbles = v ? (int)(ctz(v) / 4) : 0;
+  int pos;
+  uint32_t word;
+  int t = low_zero_nibbles - 3;
+  if (t < 0) {
+    pos = 3;
+    word = 0x7;
+  } else if (t < 3) {
+    v >>= (low_zero_nibbles * 4);
+    pos = t + 1;
+    word = (1 << t) - 1;
+  } else {
+    v >>= 20;
+    pos = 3;
+    word = 0x3;
+  }
+  word |= (v << pos) & 0x7fffffff;
+  v >>= 31 - pos;
+  if (!v) {
+    ::encode(word, ap);
+    return;
+  }
+  word |= 0x80000000;
+  ::encode(word, ap);
+  uint8_t byte = v & 0x7f;
+  v >>= 7;
+  while (v) {
+    byte |= 0x80;
+    ::encode(byte, ap);
+    byte = (v & 0x7f);
+    v >>= 7;
+  }
+  ::encode(byte, ap);
+}
+
+
 inline void small_decode_lba(uint64_t& v, bufferlist::iterator& p) {
   uint32_t word;
   ::decode(word, p);
@@ -247,6 +356,7 @@ inline void small_encode_buf_lowz(const T& bp, bufferlist& bl) {
   small_encode_varint_lowz(l, bl);
   bl.append(bp);
 }
+
 template<typename T>
 inline void small_decode_buf_lowz(T& bp, bufferlist::iterator& p) {
   size_t l;
