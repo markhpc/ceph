@@ -131,7 +131,7 @@ void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl)
   size_t n = v.size();
   small_encode_varint(n, bl);
 
-  uint64_t encodes = 16;
+  uint64_t encodes = 128;
   uint64_t pextent_size = sizeof(bluestore_pextent_t);
   uint64_t i = 0;
   //TODO: understand the reason for constness of the vector
