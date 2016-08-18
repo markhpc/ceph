@@ -606,6 +606,7 @@ struct bluestore_lextent_t {
   }
 
   void encode(bufferlist& bl) const;
+  void encode(bufferlist::safe_appender& ap) const;
   void decode(bufferlist::iterator& p);
 
   void dump(Formatter *f) const;

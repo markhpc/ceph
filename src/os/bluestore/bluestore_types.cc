@@ -822,19 +822,23 @@ int bluestore_blob_t::verify_csum(uint64_t b_off, const bufferlist& bl,
 }
 
 // bluestore_lextent_t
+void bluestore_lextent_t::encode(bufferlist::safe_appender& ap) const
+{
+  small_encode_signed_varint(blob, ap);
+  small_encode_varint_lowz(offset, ap);
+  small_encode_varint_lowz(length, ap);
+}
+
 void bluestore_lextent_t::encode(bufferlist& bl) const
 {
-
   bufferlist::safe_appender ap = bl.get_safe_appender(
     sizeof(blob) + 
     sizeof(offset) +
     sizeof(length)
   );
-
-  small_encode_signed_varint(blob, ap);
-  small_encode_varint_lowz(offset, ap);
-  small_encode_varint_lowz(length, ap);
+  encode(ap);
 }
+
 void bluestore_lextent_t::decode(bufferlist::iterator& p)
 {
   small_decode_signed_varint(blob, p);
@@ -865,6 +869,8 @@ ostream& operator<<(ostream& out, const bluestore_lextent_t& lb)
 // bluestore_onode_t
 void small_encode(const map<uint64_t,bluestore_lextent_t>& extents, bufferlist& bl)
 {
+  uint64_t encodes = 128;
+
   size_t n = extents.size();
   small_encode_varint(n, bl);
   if (n) {
@@ -872,11 +878,24 @@ void small_encode(const map<uint64_t,bluestore_lextent_t>& extents, bufferlist& 
     small_encode_varint_lowz(p->first, bl);
     p->second.encode(bl);
     uint64_t pos = p->first;
-    while (--n) {
+
+    uint32_t alloc_size = sizeof(p->first) + sizeof(p->second);
+    uint64_t i = 0;
+    for (; i < n-n%encodes; i+=encodes) {
+      bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+      for (uint32_t j = 0; j < encodes; ++j) {
+        ++p;
+        small_encode_varint_lowz((uint64_t)p->first - pos, ap);
+        p->second.encode(ap);
+        pos = p->first;      
+      }
+    }
+    bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+    for (; i < n; ++i) {
       ++p;
-      small_encode_varint_lowz((uint64_t)p->first - pos, bl);
-      p->second.encode(bl);
-      pos = p->first;
+      small_encode_varint_lowz((uint64_t)p->first - pos, ap);
+      p->second.encode(ap);
+      pos = p->first; 
     }
   }
 }
