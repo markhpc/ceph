@@ -126,6 +126,16 @@ void bluestore_cnode_t::generate_test_instances(list<bluestore_cnode_t*>& o)
 
 // bluestore_pextent_t
 
+void small_encode(const vector<bluestore_pextent_t>& v, bufferlist::safe_appender& ap)
+{
+  size_t n = v.size();
+  small_encode_varint(n, ap);
+  for (auto e : v) {
+    e.encode(ap);
+  }
+
+}
+
 void small_encode(const vector<bluestore_pextent_t>& v, bufferlist& bl)
 {
   size_t n = v.size();
@@ -478,19 +488,20 @@ string bluestore_blob_t::get_flags_string(unsigned flags)
 void bluestore_blob_t::encode(bufferlist& bl) const
 {
   ENCODE_START(1, 1, bl);
-  small_encode(extents, bl);
-
-  uint64_t size =
-    sizeof(flags) + 
-    sizeof(compressed_length_orig) + 
+  uint64_t esize = extents.size();
+  uint64_t alloc_size = sizeof(esize);
+  alloc_size += esize * sizeof(bluestore_pextent_t);
+  alloc_size +=
+    sizeof(flags) +
+    sizeof(compressed_length_orig) +
     sizeof(compressed_length) +
     sizeof(csum_type) +
     sizeof(csum_chunk_order);
 
   // create scope for ap
   {
-    bufferlist::safe_appender ap = bl.get_safe_appender(size);
-
+    bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+    small_encode(extents, ap);
     small_encode_varint(flags, ap);
     if (is_compressed()) {
       small_encode_varint_lowz(compressed_length_orig, ap);
