@@ -434,7 +434,7 @@ namespace buffer CEPH_BUFFER_API {
     public:
       unsafe_appender(bufferlist *l, size_t s) : appender(l, s) {}
       unsafe_appender(appender *parent) : appender(parent) {}
-      void append(char *p, size_t l) {
+      void append(const char *p, size_t l) {
 	memcpy(pos, p, l);
 	pos += l;
       }
@@ -448,7 +448,7 @@ namespace buffer CEPH_BUFFER_API {
     class safe_appender : public appender {
     public:
       safe_appender(bufferlist *l, size_t s) : appender(l, s) {}
-      void append(char *p, size_t l) {
+      void append(const char *p, size_t l) {
 	if (pos + l > end) {
 	  flush();
 	  prepare_buffer(l);
