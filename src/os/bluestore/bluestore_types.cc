@@ -479,15 +479,31 @@ void bluestore_blob_t::encode(bufferlist& bl) const
 {
   ENCODE_START(1, 1, bl);
   small_encode(extents, bl);
-  small_encode_varint(flags, bl);
-  if (is_compressed()) {
-    small_encode_varint_lowz(compressed_length_orig, bl);
-    small_encode_varint_lowz(compressed_length, bl);
-  }
+
+  uint64_t size =
+    sizeof(flags) + 
+    sizeof(compressed_length_orig) + 
+    sizeof(compressed_length);
   if (has_csum()) {
-    ::encode(csum_type, bl);
-    ::encode(csum_chunk_order, bl);
-    small_encode_buf_lowz(csum_data, bl);
+    size +=
+      sizeof(csum_type) + 
+      sizeof(csum_chunk_order) + 
+      csum_data.length();
+  } 
+  // create scope for ap
+  {
+    bufferlist::safe_appender ap = bl.get_safe_appender(size);
+
+    small_encode_varint(flags, ap);
+    if (is_compressed()) {
+      small_encode_varint_lowz(compressed_length_orig, ap);
+      small_encode_varint_lowz(compressed_length, ap);
+    }
+    if (has_csum()) {
+      ::encode(csum_type, ap);
+      ::encode(csum_chunk_order, ap);
+      small_encode_buf_lowz(csum_data, ap);
+    }
   }
   if (has_refmap()) {
     ::encode(ref_map, bl);
