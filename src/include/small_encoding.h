@@ -358,6 +358,13 @@ inline void small_encode_buf_lowz(const T& bp, bufferlist& bl) {
 }
 
 template<typename T>
+inline void small_encode_buf_lowz(const T& bp, bufferlist::safe_appender& ap) {
+  size_t l = bp.length();
+  small_encode_varint_lowz(l, ap);
+  ap.append(bp.c_str(), l);
+}
+
+template<typename T>
 inline void small_decode_buf_lowz(T& bp, bufferlist::iterator& p) {
   size_t l;
   small_decode_varint_lowz(l, p);
