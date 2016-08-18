@@ -824,9 +824,16 @@ int bluestore_blob_t::verify_csum(uint64_t b_off, const bufferlist& bl,
 // bluestore_lextent_t
 void bluestore_lextent_t::encode(bufferlist& bl) const
 {
-  small_encode_signed_varint(blob, bl);
-  small_encode_varint_lowz(offset, bl);
-  small_encode_varint_lowz(length, bl);
+
+  bufferlist::safe_appender ap = bl.get_safe_appender(
+    sizeof(blob) + 
+    sizeof(offset) +
+    sizeof(length)
+  );
+
+  small_encode_signed_varint(blob, ap);
+  small_encode_varint_lowz(offset, ap);
+  small_encode_varint_lowz(length, ap);
 }
 void bluestore_lextent_t::decode(bufferlist::iterator& p)
 {
