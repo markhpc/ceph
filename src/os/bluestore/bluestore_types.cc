@@ -882,7 +882,7 @@ void small_encode(const map<uint64_t,bluestore_lextent_t>& extents, bufferlist& 
     uint32_t alloc_size = sizeof(p->first) + sizeof(p->second);
     uint64_t i = 0;
     for (; i < n-n%encodes; i+=encodes) {
-      bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+      bufferlist::safe_appender ap = bl.get_safe_appender(encodes * alloc_size);
       for (uint32_t j = 0; j < encodes; ++j) {
         ++p;
         small_encode_varint_lowz((uint64_t)p->first - pos, ap);
@@ -890,7 +890,7 @@ void small_encode(const map<uint64_t,bluestore_lextent_t>& extents, bufferlist& 
         pos = p->first;      
       }
     }
-    bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+    bufferlist::safe_appender ap = bl.get_safe_appender((n-i) * alloc_size);
     for (; i < n; ++i) {
       ++p;
       small_encode_varint_lowz((uint64_t)p->first - pos, ap);
