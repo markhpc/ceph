@@ -404,6 +404,10 @@ namespace buffer CEPH_BUFFER_API {
 	  bp(std::move(o.bp)),
 	  pos(o.pos), start(o.pos), end(o.end) {
       }
+      uint64_t get_pos() {
+        return pos - start;
+      }
+
       ~appender() {
 	flush();
       }
