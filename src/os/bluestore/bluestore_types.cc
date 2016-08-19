@@ -504,11 +504,11 @@ string bluestore_blob_t::get_flags_string(unsigned flags)
 
 void bluestore_blob_t::encode(bufferlist& bl) const
 {
-  ENCODE_START(1, 1, bl);
   uint64_t esize = extents.size();
-  uint64_t alloc_size = sizeof(esize);
-  alloc_size += esize * sizeof(bluestore_pextent_t);
-  alloc_size +=
+  uint64_t alloc_size = 6; // 6 Byte header
+  alloc_size += 
+    sizeof(esize);
+    esize * sizeof(bluestore_pextent_t) +
     sizeof(flags) +
     sizeof(compressed_length_orig) +
     sizeof(compressed_length);
@@ -524,28 +524,27 @@ void bluestore_blob_t::encode(bufferlist& bl) const
   }
   alloc_size += sizeof(unused_uint_t);
 
-  // create scope for ap
-  {
-    bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
-    small_encode(extents, ap);
-    small_encode_varint(flags, ap);
-    if (is_compressed()) {
-      small_encode_varint_lowz(compressed_length_orig, ap);
-      small_encode_varint_lowz(compressed_length, ap);
-    }
-    if (has_csum()) {
-      ::encode(csum_type, ap);
-      ::encode(csum_chunk_order, ap);
-      small_encode_buf_lowz(csum_data, ap);
-    }
-    if (has_refmap()) {
-      ref_map.encode(ap);
-    }
-    if (has_unused()) {
-      ::encode(unused_uint_t(unused.to_ullong()), ap);
-    }
+  bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+
+  ENCODE_START_AP(1, 1, ap);
+  small_encode(extents, ap);
+  small_encode_varint(flags, ap);
+  if (is_compressed()) {
+    small_encode_varint_lowz(compressed_length_orig, ap);
+    small_encode_varint_lowz(compressed_length, ap);
   }
-  ENCODE_FINISH(bl);
+  if (has_csum()) {
+    ::encode(csum_type, ap);
+    ::encode(csum_chunk_order, ap);
+    small_encode_buf_lowz(csum_data, ap);
+  }
+  if (has_refmap()) {
+    ref_map.encode(ap);
+  }
+  if (has_unused()) {
+    ::encode(unused_uint_t(unused.to_ullong()), ap);
+  }
+  ENCODE_FINISH_AP(ap);
 }
 
 void bluestore_blob_t::decode(bufferlist::iterator& p)
