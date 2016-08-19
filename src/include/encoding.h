@@ -899,9 +899,9 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
   ceph_le32 struct_len;                                      \
   struct_len = 0;                                            \
   ::encode(struct_v, (ap));                                  \
-  struct_compat_pos = ap.get_pos();                          \
+  uint64_t struct_compat_pos = ap.get_pos();                 \
   ::encode(struct_compat, (ap));                             \
-  struct_len_pos = ap.get_pos();                             \
+  uint64_t struct_len_pos = ap.get_pos();                    \
   ::encode(struct_len, (ap));                                \
   do {
 
@@ -927,7 +927,7 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
  */
 #define ENCODE_FINISH_AP(ap)                                            \
   } while (false);                                                      \
-  struct_len = (ap).pos() - struct_len_pos - sizeof(struct_len);        \
+  struct_len = (ap).get_pos() - struct_len_pos - sizeof(struct_len);    \
   ap.rewrite((char *)&struct_len, struct_len_pos, 4);                   \
   if (new_struct_compat) {                                              \
     struct_compat = new_struct_compat;                                  \
