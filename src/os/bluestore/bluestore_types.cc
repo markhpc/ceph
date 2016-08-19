@@ -507,7 +507,7 @@ void bluestore_blob_t::encode(bufferlist& bl) const
   uint64_t esize = extents.size();
   uint64_t alloc_size = 6; // 6 Byte header
   alloc_size += 
-    sizeof(esize);
+    sizeof(esize) +
     esize * sizeof(bluestore_pextent_t) +
     sizeof(flags) +
     sizeof(compressed_length_orig) +
@@ -566,7 +566,6 @@ void bluestore_blob_t::decode(bufferlist::iterator& p)
     csum_type = CSUM_NONE;
     csum_chunk_order = 0;
   }
-
   if (has_refmap()) {
     ref_map.decode(p);
   }
