@@ -515,6 +515,11 @@ void bluestore_blob_t::encode(bufferlist& bl) const
     sizeof(compressed_length) +
     sizeof(csum_type) +
     sizeof(csum_chunk_order);
+  if (has_refmap()) {
+    uint32_t rsize = ref_map.ref_map.size();
+    alloc_size += sizeof(rsize) + rsize*(sizeof(uint64_t) * sizeof(bluestore_extent_ref_map_t::record_t));
+  }
+  alloc_size += sizeof(unused_uint_t);
 
   // create scope for ap
   {
@@ -525,6 +530,12 @@ void bluestore_blob_t::encode(bufferlist& bl) const
       small_encode_varint_lowz(compressed_length_orig, ap);
       small_encode_varint_lowz(compressed_length, ap);
     }
+    if (has_refmap()) {
+      ref_map.encode(ap);
+    }
+    if (has_unused()) {
+      ::encode(unused_uint_t(unused.to_ullong()), ap);
+    }
     if (has_csum()) {
       ::encode(csum_type, ap);
       ::encode(csum_chunk_order, ap);
@@ -533,17 +544,9 @@ void bluestore_blob_t::encode(bufferlist& bl) const
   if (has_csum()) {
     small_encode_buf_lowz(csum_data, bl);
   }
-
-  if (has_refmap()) {
-    uint32_t rsize = ref_map.ref_map.size();
-    uint64_t ref_alloc_size = sizeof(rsize) + rsize*(sizeof(uint64_t) * sizeof(bluestore_extent_ref_map_t::record_t));
-    bufferlist::safe_appender ap = bl.get_safe_appender(ref_alloc_size);    
-//    ::encode(ref_map, ap);
-    ref_map.encode(ap);
-  }
-  if (has_unused()) {
-    ::encode(unused_uint_t(unused.to_ullong()), bl);
-  }
+//  if (has_unused()) {
+//    ::encode(unused_uint_t(unused.to_ullong()), bl);
+//  }
   ENCODE_FINISH(bl);
 }
 
@@ -558,6 +561,14 @@ void bluestore_blob_t::decode(bufferlist::iterator& p)
   } else {
     compressed_length_orig = compressed_length = 0;
   }
+  if (has_refmap()) {
+    ref_map.decode(p);
+  }
+  if (has_unused()) {
+    unused_uint_t val;
+    ::decode(val, p);
+    unused = unused_t(val);
+  }
   if (has_csum()) {
     ::decode(csum_type, p);
     ::decode(csum_chunk_order, p);
@@ -566,15 +577,11 @@ void bluestore_blob_t::decode(bufferlist::iterator& p)
     csum_type = CSUM_NONE;
     csum_chunk_order = 0;
   }
-  if (has_refmap()) {
-//    ::decode(ref_map, p);
-    ref_map.decode(p);
-  }
-  if (has_unused()) {
-    unused_uint_t val;
-    ::decode(val, p);
-    unused = unused_t(val);
-  }
+//  if (has_unused()) {
+//    unused_uint_t val;
+//    ::decode(val, p);
+//    unused = unused_t(val);
+//  }
   DECODE_FINISH(p);
 }
 
