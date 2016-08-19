@@ -384,6 +384,7 @@ namespace buffer CEPH_BUFFER_API {
       size_t size;
       ptr bp;
       char *pos;
+      char *start;
       union {
 	char *end;
 	appender *parent;
@@ -396,11 +397,12 @@ namespace buffer CEPH_BUFFER_API {
       appender(appender *p)
 	: pls(nullptr),
 	  pos(p->pos),
+          start(p->pos),
 	  parent(p) {}
       appender(appender&& o)
 	: pls(o.pls), size(o.size),
 	  bp(std::move(o.bp)),
-	  pos(o.pos), end(o.end) {
+	  pos(o.pos), start(o.pos), end(o.end) {
       }
       ~appender() {
 	flush();
@@ -414,6 +416,7 @@ namespace buffer CEPH_BUFFER_API {
       void prepare_buffer(size_t at_least = 0) {
 	bp = buffer::create(std::max(size, at_least));
 	pos = bp.c_str();
+        start = pos;
 	end = pos + bp.length();
       }
 
@@ -443,6 +446,10 @@ namespace buffer CEPH_BUFFER_API {
 	*(T*)pos = v;
 	pos += sizeof(T);
       }
+      void rewrite(const char *p, size_t o, size_t l) {
+        memcpy(start + o, p, l);
+      }
+
     };
 
     class safe_appender : public appender {
@@ -464,6 +471,10 @@ namespace buffer CEPH_BUFFER_API {
 	}
 	*(T*)pos = v;
 	pos += sizeof(T);
+      }
+      void rewrite(const char *p, size_t o, size_t l) {
+        assert(start + o + l > pos);
+        memcpy(start + o, p, l);
       }
       unsafe_appender reserve(size_t s) {
 	if (pos + s > end) {
