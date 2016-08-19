@@ -899,7 +899,7 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
   ceph_le32 struct_len;                                      \
   struct_len = 0;                                            \
   {                                                          \
-    bufferlist::safe_appender ap = bl.get_safe_appender(     \
+    bufferlist::safe_appender ap = (bl).get_safe_appender(   \
       sizeof(__u8) * 2 +                                     \
       sizeof(ceph_le32)                                      \
     );                                                       \
