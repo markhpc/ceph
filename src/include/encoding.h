@@ -894,12 +894,12 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
  * @param compat oldest code version that can decode it
  * @param ap appender to encode to
  */
-#define ENCODE_START(v, compat, bl)                       \
+#define ENCODE_START(v, compat, bl)                          \
   __u8 struct_v = v, struct_compat = compat;                 \
   ceph_le32 struct_len;                                      \
   struct_len = 0;                                            \
   {                                                          \
-    buffer::list::safe_appender ap = bl.get_safe_appender(   \
+    bufferlist::safe_appender ap = bl.get_safe_appender(     \
       sizeof(__u8) * 2 +                                     \
       sizeof(ceph_le32)                                      \
     );                                                       \
@@ -914,7 +914,7 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
   do {
 
 
-#define ENCODE_START_ORIG(v, compat, bl)			     \
+#define ENCODE_START_ORIG(v, compat, bl)		     \
   __u8 struct_v = v, struct_compat = compat;		     \
   ::encode(struct_v, (bl));				     \
   ::encode(struct_compat, (bl));			     \
