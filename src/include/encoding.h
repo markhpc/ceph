@@ -925,7 +925,7 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
  * @param bl bufferlist we were encoding to
  * @param new_struct_compat struct-compat value to use
  */
-#define ENCODE_FINISH_AP(ap)                                            \
+#define ENCODE_FINISH_AP_NEW_COMPAT(ap, new_struct_compat)              \
   } while (false);                                                      \
   struct_len = (ap).get_pos() - struct_len_pos - sizeof(struct_len);    \
   ap.rewrite((char *)&struct_len, struct_len_pos, 4);                   \
@@ -933,6 +933,8 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
     struct_compat = new_struct_compat;                                  \
     ap.rewrite((char *)&struct_compat, struct_compat_pos, 1);           \
   }
+
+#define ENCODE_FINISH_AP(ap) ENCODE_FINISH_AP_NEW_COMPAT(ap, 0)
 
 #define ENCODE_FINISH_NEW_COMPAT(bl, new_struct_compat)			\
   } while (false);							\
