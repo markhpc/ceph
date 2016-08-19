@@ -360,6 +360,24 @@ bool bluestore_extent_ref_map_t::intersects(
   return true;  // intersects p!
 }
 
+void bluestore_extent_ref_map_t::encode(bufferlist::safe_appender& ap) const
+{
+  uint32_t n = ref_map.size();
+  small_encode_varint(n, ap);
+  if (n) {
+    auto p = ref_map.begin();
+    small_encode_varint_lowz(p->first, ap);
+    p->second.encode(ap);
+    int32_t pos = p->first;
+    while (--n) {
+      ++p;
+      small_encode_varint_lowz((int64_t)p->first - pos, ap);
+      p->second.encode(ap);
+      pos = p->first;
+    }
+  }
+}
+
 void bluestore_extent_ref_map_t::encode(bufferlist& bl) const
 {
   uint32_t n = ref_map.size();
@@ -515,8 +533,13 @@ void bluestore_blob_t::encode(bufferlist& bl) const
   if (has_csum()) {
     small_encode_buf_lowz(csum_data, bl);
   }
+
   if (has_refmap()) {
-    ::encode(ref_map, bl);
+    uint32_t rsize = ref_map.ref_map.size();
+    uint64_t ref_alloc_size = sizeof(rsize) + rsize*(sizeof(uint64_t) * sizeof(bluestore_extent_ref_map_t::record_t));
+    bufferlist::safe_appender ap = bl.get_safe_appender(ref_alloc_size);    
+//    ::encode(ref_map, ap);
+    ref_map.encode(ap);
   }
   if (has_unused()) {
     ::encode(unused_uint_t(unused.to_ullong()), bl);
@@ -544,7 +567,8 @@ void bluestore_blob_t::decode(bufferlist::iterator& p)
     csum_chunk_order = 0;
   }
   if (has_refmap()) {
-    ::decode(ref_map, p);
+//    ::decode(ref_map, p);
+    ref_map.decode(p);
   }
   if (has_unused()) {
     unused_uint_t val;

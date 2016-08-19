@@ -158,6 +158,10 @@ struct bluestore_extent_ref_map_t {
     uint32_t length;
     uint32_t refs;
     record_t(uint32_t l=0, uint32_t r=0) : length(l), refs(r) {}
+    void encode(bufferlist::safe_appender& ap) const {
+      small_encode_varint_lowz(length, ap);
+      small_encode_varint(refs, ap);
+    }
     void encode(bufferlist& bl) const {
       small_encode_varint_lowz(length, bl);
       small_encode_varint(refs, bl);
@@ -195,6 +199,7 @@ struct bluestore_extent_ref_map_t {
   bool contains(uint32_t offset, uint32_t len) const;
   bool intersects(uint32_t offset, uint32_t len) const;
 
+  void encode(bufferlist::safe_appender& ap) const;
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& p);
   void dump(Formatter *f) const;
