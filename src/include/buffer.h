@@ -450,6 +450,9 @@ namespace buffer CEPH_BUFFER_API {
 	*(T*)pos = v;
 	pos += sizeof(T);
       }
+      void append(bufferlist::ptr& ptr) {
+        append(ptr.c_str(), ptr.length())
+      }
       void rewrite(const char *p, size_t o, size_t l) {
         memcpy(start + o, p, l);
       }
@@ -475,6 +478,9 @@ namespace buffer CEPH_BUFFER_API {
 	}
 	*(T*)pos = v;
 	pos += sizeof(T);
+      }
+      void append(bufferlist::ptr& ptr) {
+        append(ptr.c_str(), ptr.length())
       }
       void rewrite(const char *p, size_t o, size_t l) {
         assert(start + o + l > pos);
