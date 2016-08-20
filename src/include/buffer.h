@@ -485,7 +485,7 @@ namespace buffer CEPH_BUFFER_API {
           flush();
           prepare_buffer(l);
         }
-        ptr.copy(l, pos);
+        ptr.copy_out(0, l, pos);
         pos += l;
       }
       void rewrite(const char *p, size_t o, size_t l) {
