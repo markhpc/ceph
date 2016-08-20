@@ -504,7 +504,7 @@ string bluestore_blob_t::get_flags_string(unsigned flags)
 
 void bluestore_blob_t::encode(bufferlist& bl) const
 {
-  uint64_t esize = extents.size();
+/*  uint64_t esize = extents.size();
   uint64_t alloc_size = 6; // 6 Byte header
   alloc_size += 
     sizeof(esize) +
@@ -523,8 +523,8 @@ void bluestore_blob_t::encode(bufferlist& bl) const
     alloc_size += sizeof(rsize) + rsize*(sizeof(uint64_t) * sizeof(bluestore_extent_ref_map_t::record_t));
   }
   alloc_size += sizeof(unused_uint_t);
-
-  bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
+*/
+  bufferlist::safe_appender ap = bl.get_safe_appender(get_alloc_size());
 
   ENCODE_START_AP(1, 1, ap);
   small_encode(extents, ap);

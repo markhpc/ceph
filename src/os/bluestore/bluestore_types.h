@@ -579,6 +579,29 @@ struct bluestore_blob_t {
   /// return 0 if all is well.
   int verify_csum(uint64_t b_off, const bufferlist& bl, int* b_bad_off) const;
 
+  // Hacky way for now to get the bluestore_blob_t size
+  uint64_t get_alloc_size() {
+    uint64_t esize = extents.size();
+    uint64_t alloc_size = 6; // 6 byte header
+    alloc_size += 
+      sizeof(esize) +
+      esize * sizeof(bluestore_pextent_t) +
+      sizeof(flags) +
+      sizeof(compressed_length_orig) +
+      sizeof(compressed_length);
+    if (has_csum()) {
+      alloc_size +=
+        sizeof(csum_type) +
+        sizeof(csum_chunk_order) +
+        csum_data.length();
+    }
+    if (has_refmap()) {
+      uint32_t rsize = ref_map.ref_map.size();
+      alloc_size += sizeof(rsize) + rsize*(sizeof(uint64_t) * sizeof(bluestore_extent_ref_map_t::record_t));
+    }
+    alloc_size += sizeof(unused_uint_t);
+    return alloc_size;
+  }
 };
 WRITE_CLASS_ENCODER(bluestore_blob_t)
 
