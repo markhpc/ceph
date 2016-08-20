@@ -1183,7 +1183,7 @@ void BlueStore::BlobMap::encode(bufferlist& bl) const
     bufferlist::safe_appender ap = bl.get_safe_appender(alloc_size);
 
     ::encode(p->id, ap);
-    ::encode(p->blob, ap);
+    p->blob.encode(ap);
   }
 }
 
