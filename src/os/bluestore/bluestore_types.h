@@ -313,7 +313,7 @@ struct bluestore_blob_t {
 
   bluestore_blob_t(uint32_t f = 0) : flags(f) {}
 
-  void encode(bufferlist& bl) const;
+  void encode(bufferlist::safe_appender& ap) const;
   void decode(bufferlist::iterator& p);
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_blob_t*>& ls);
