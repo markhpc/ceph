@@ -581,7 +581,7 @@ struct bluestore_blob_t {
   int verify_csum(uint64_t b_off, const bufferlist& bl, int* b_bad_off) const;
 
   // Hacky way for now to get the bluestore_blob_t size
-  uint64_t get_alloc_size() {
+  uint64_t get_alloc_size() const {
     uint64_t esize = extents.size();
     uint64_t alloc_size = 6; // 6 byte header
     alloc_size += 
