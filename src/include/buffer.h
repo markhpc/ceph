@@ -450,7 +450,7 @@ namespace buffer CEPH_BUFFER_API {
 	*(T*)pos = v;
 	pos += sizeof(T);
       }
-      void append(buffer::ptr& ptr, size_t l) {
+      void append(const buffer::ptr& ptr, size_t l) {
         ptr.copy_out(0, l, pos);
         pos += l;
       }
@@ -480,7 +480,7 @@ namespace buffer CEPH_BUFFER_API {
 	*(T*)pos = v;
 	pos += sizeof(T);
       }
-      void append(buffer::ptr& ptr, size_t l) {
+      void append(const buffer::ptr& ptr, size_t l) {
         if (pos + l > end) {
           flush();
           prepare_buffer(l);
