@@ -483,7 +483,7 @@ namespace buffer CEPH_BUFFER_API {
         append(ptr.c_str(), ptr.length());
       }
       void rewrite(const char *p, size_t o, size_t l) {
-        assert(start + o + l > pos);
+        assert(start + o + l < pos);
         memcpy(start + o, p, l);
       }
       unsafe_appender reserve(size_t s) {
