@@ -361,7 +361,7 @@ template<typename T>
 inline void small_encode_buf_lowz(const T& bp, bufferlist::safe_appender& ap) {
   size_t l = bp.length();
   small_encode_varint_lowz(l, ap);
-  ap.append(bp.c_str(), l);
+  ap.append(bp);
 }
 
 template<typename T>
