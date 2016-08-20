@@ -547,7 +547,7 @@ void bluestore_blob_t::encode(bufferlist::safe_appender& ap) const
   ENCODE_FINISH_AP(ap);
 }
 
-void bluestore_blob_t::encode(bufferlist::safe_appender& ap) const
+void bluestore_blob_t::encode(bufferlist& bl) const
 {
   encode(bl.get_safe_appender(get_alloc_size()));
 }
