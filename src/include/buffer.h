@@ -488,6 +488,9 @@ namespace buffer CEPH_BUFFER_API {
         ptr.copy_out(0, l, pos);
         pos += l;
       }
+
+      // FIXME: This isn't a good idea  given that a flush may happen
+      // in safe-appender.  Need to redo this before merging.
       void rewrite(const char *p, size_t o, size_t l) {
         assert(start + o + l < pos);
         memcpy(start + o, p, l);
