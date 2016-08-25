@@ -2783,6 +2783,9 @@ void PG::upgrade(ObjectStore *store)
 #pragma GCC diagnostic pop
 #pragma GCC diagnostic warning "-Wpragmas"
 
+#undef dout_prefix
+#define dout_prefix *_dout << "pg::_prepare_write_info: " 
+
 int PG::_prepare_write_info(map<string,bufferlist> *km,
 			    epoch_t epoch,
 			    pg_info_t &info, coll_t coll,
@@ -2796,7 +2799,13 @@ int PG::_prepare_write_info(map<string,bufferlist> *km,
   if (dirty_epoch)
     ::encode(epoch, (*km)[epoch_key]);
   purged_snaps.swap(info.purged_snaps);
-  ::encode(info, (*km)[info_key]);
+  bufferlist& infobl = (*km)[info_key];
+  uint64_t blen = infobl.length();
+  ::encode(info, infobl);
+  uint64_t alen = infobl.length();
+  uint64_t len = alen - blen;
+  dout(19) << "write_info infobl before: " << blen << ", after: " << alen << ", size: " << len << dendl;
+
   purged_snaps.swap(info.purged_snaps);
 
   if (dirty_big_info) {
@@ -2804,7 +2813,6 @@ int PG::_prepare_write_info(map<string,bufferlist> *km,
     bufferlist& bigbl = (*km)[biginfo_key];
     ::encode(past_intervals, bigbl);
     ::encode(info.purged_snaps, bigbl);
-    //dout(20) << "write_info bigbl " << bigbl.length() << dendl;
   }
 
   return 0;
