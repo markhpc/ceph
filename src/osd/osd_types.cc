@@ -1908,7 +1908,7 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
 //  }
 //#endif
   if (!decode_finish) {
-    ::decode(num_bytes, bl);
+    small_decode_varint(num_bytes, bl);
     if (struct_v < 3) {
       uint64_t num_kb;
       small_decode_varint(num_kb, bl);
