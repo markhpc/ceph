@@ -1893,7 +1893,7 @@ void object_stat_sum_t::encode(bufferlist& bl) const
   small_encode_varint(num_evict_mode_full, bl);
   small_encode_varint(num_objects_pinned, bl);
   small_encode_varint(num_objects_missing, bl);
-#endif
+//#endif
   ENCODE_FINISH(bl);
 }
 
