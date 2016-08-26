@@ -369,17 +369,17 @@ struct pg_t {
 
   void encode(bufferlist& bl) const {
     __u8 v = 1;
-    small_encode_varint(v, bl);
+    encode::(v, bl);
     small_encode_varint(m_pool, bl);
     small_encode_varint(m_seed, bl);
-    small_encode_varint(m_preferred, bl);
+    small_encode_signed_varint(m_preferred, bl);
   }
   void decode(bufferlist::iterator& bl) {
     __u8 v;
-    small_decode_varint(v, bl);
+    encode::(v, bl);
     small_decode_varint(m_pool, bl);
     small_decode_varint(m_seed, bl);
-    small_decode_varint(m_preferred, bl);
+    small_decode_signed_varint(m_preferred, bl);
   }
   void decode_old(bufferlist::iterator& bl) {
     old_pg_t opg;
