@@ -1856,9 +1856,9 @@ void object_stat_sum_t::dump(Formatter *f) const
 void object_stat_sum_t::encode(bufferlist& bl) const
 {
   ENCODE_START(15, 3, bl);
-#if defined(CEPH_LITTLE_ENDIAN)
-  bl.append((char *)(&num_bytes), sizeof(object_stat_sum_t));
-#else
+//#if defined(CEPH_LITTLE_ENDIAN)
+//  bl.append((char *)(&num_bytes), sizeof(object_stat_sum_t));
+//#else
   small_encode_varint(num_bytes, bl);
   small_encode_varint(num_objects, bl);
   small_encode_varint(num_object_clones, bl);
@@ -1901,12 +1901,12 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
 {
   bool decode_finish = false;
   DECODE_START_LEGACY_COMPAT_LEN(14, 3, 3, bl);
-#if defined(CEPH_LITTLE_ENDIAN)
-  if (struct_v >= 15) {
-    bl.copy(sizeof(object_stat_sum_t), (char*)(&num_bytes));
-    decode_finish = true;
-  }
-#endif
+//#if defined(CEPH_LITTLE_ENDIAN)
+//  if (struct_v >= 15) {
+//    bl.copy(sizeof(object_stat_sum_t), (char*)(&num_bytes));
+//    decode_finish = true;
+//  }
+//#endif
   if (!decode_finish) {
     ::decode(num_bytes, bl);
     if (struct_v < 3) {
