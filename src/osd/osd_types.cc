@@ -25,6 +25,7 @@ extern "C" {
 #include "PG.h"
 #include "OSDMap.h"
 #include "PGBackend.h"
+#include "include/small_encoding.h"
 
 const char *ceph_osd_flag_name(unsigned flag)
 {
@@ -1858,40 +1859,40 @@ void object_stat_sum_t::encode(bufferlist& bl) const
 #if defined(CEPH_LITTLE_ENDIAN)
   bl.append((char *)(&num_bytes), sizeof(object_stat_sum_t));
 #else
-  ::encode(num_bytes, bl);
-  ::encode(num_objects, bl);
-  ::encode(num_object_clones, bl);
-  ::encode(num_object_copies, bl);
-  ::encode(num_objects_missing_on_primary, bl);
-  ::encode(num_objects_degraded, bl);
-  ::encode(num_objects_unfound, bl);
-  ::encode(num_rd, bl);
-  ::encode(num_rd_kb, bl);
-  ::encode(num_wr, bl);
-  ::encode(num_wr_kb, bl);
-  ::encode(num_scrub_errors, bl);
-  ::encode(num_objects_recovered, bl);
-  ::encode(num_bytes_recovered, bl);
-  ::encode(num_keys_recovered, bl);
-  ::encode(num_shallow_scrub_errors, bl);
-  ::encode(num_deep_scrub_errors, bl);
-  ::encode(num_objects_dirty, bl);
-  ::encode(num_whiteouts, bl);
-  ::encode(num_objects_omap, bl);
-  ::encode(num_objects_hit_set_archive, bl);
-  ::encode(num_objects_misplaced, bl);
-  ::encode(num_bytes_hit_set_archive, bl);
-  ::encode(num_flush, bl);
-  ::encode(num_flush_kb, bl);
-  ::encode(num_evict, bl);
-  ::encode(num_evict_kb, bl);
-  ::encode(num_promote, bl);
-  ::encode(num_flush_mode_high, bl);
-  ::encode(num_flush_mode_low, bl);
-  ::encode(num_evict_mode_some, bl);
-  ::encode(num_evict_mode_full, bl);
-  ::encode(num_objects_pinned, bl);
-  ::encode(num_objects_missing, bl);
+  small_encode_varint(num_bytes, bl);
+  small_encode_varint(num_objects, bl);
+  small_encode_varint(num_object_clones, bl);
+  small_encode_varint(num_object_copies, bl);
+  small_encode_varint(num_objects_missing_on_primary, bl);
+  small_encode_varint(num_objects_degraded, bl);
+  small_encode_varint(num_objects_unfound, bl);
+  small_encode_varint(num_rd, bl);
+  small_encode_varint(num_rd_kb, bl);
+  small_encode_varint(num_wr, bl);
+  small_encode_varint(num_wr_kb, bl);
+  small_encode_varint(num_scrub_errors, bl);
+  small_encode_varint(num_objects_recovered, bl);
+  small_encode_varint(num_bytes_recovered, bl);
+  small_encode_varint(num_keys_recovered, bl);
+  small_encode_varint(num_shallow_scrub_errors, bl);
+  small_encode_varint(num_deep_scrub_errors, bl);
+  small_encode_varint(num_objects_dirty, bl);
+  small_encode_varint(num_whiteouts, bl);
+  small_encode_varint(num_objects_omap, bl);
+  small_encode_varint(num_objects_hit_set_archive, bl);
+  small_encode_varint(num_objects_misplaced, bl);
+  small_encode_varint(num_bytes_hit_set_archive, bl);
+  small_encode_varint(num_flush, bl);
+  small_encode_varint(num_flush_kb, bl);
+  small_encode_varint(num_evict, bl);
+  small_encode_varint(num_evict_kb, bl);
+  small_encode_varint(num_promote, bl);
+  small_encode_varint(num_flush_mode_high, bl);
+  small_encode_varint(num_flush_mode_low, bl);
+  small_encode_varint(num_evict_mode_some, bl);
+  small_encode_varint(num_evict_mode_full, bl);
+  small_encode_varint(num_objects_pinned, bl);
+  small_encode_varint(num_objects_missing, bl);
 #endif
   ENCODE_FINISH(bl);
 }
@@ -1910,72 +1911,72 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
     ::decode(num_bytes, bl);
     if (struct_v < 3) {
       uint64_t num_kb;
-      ::decode(num_kb, bl);
+      small_decode_varint(num_kb, bl);
     }
-    ::decode(num_objects, bl);
-    ::decode(num_object_clones, bl);
-    ::decode(num_object_copies, bl);
-    ::decode(num_objects_missing_on_primary, bl);
-    ::decode(num_objects_degraded, bl);
+    small_decode_varint(num_objects, bl);
+    small_decode_varint(num_object_clones, bl);
+    small_decode_varint(num_object_copies, bl);
+    small_decode_varint(num_objects_missing_on_primary, bl);
+    small_decode_varint(num_objects_degraded, bl);
     if (struct_v >= 2)
-      ::decode(num_objects_unfound, bl);
-    ::decode(num_rd, bl);
-    ::decode(num_rd_kb, bl);
-    ::decode(num_wr, bl);
-    ::decode(num_wr_kb, bl);
+      small_decode_varint(num_objects_unfound, bl);
+    small_decode_varint(num_rd, bl);
+    small_decode_varint(num_rd_kb, bl);
+    small_decode_varint(num_wr, bl);
+    small_decode_varint(num_wr_kb, bl);
     if (struct_v >= 4)
-      ::decode(num_scrub_errors, bl);
+      small_decode_varint(num_scrub_errors, bl);
     else
       num_scrub_errors = 0;
     if (struct_v >= 5) {
-      ::decode(num_objects_recovered, bl);
-      ::decode(num_bytes_recovered, bl);
-      ::decode(num_keys_recovered, bl);
+      small_decode_varint(num_objects_recovered, bl);
+      small_decode_varint(num_bytes_recovered, bl);
+      small_decode_varint(num_keys_recovered, bl);
     } else {
       num_objects_recovered = 0;
       num_bytes_recovered = 0;
       num_keys_recovered = 0;
     }
     if (struct_v >= 6) {
-      ::decode(num_shallow_scrub_errors, bl);
-      ::decode(num_deep_scrub_errors, bl);
+      small_decode_varint(num_shallow_scrub_errors, bl);
+      small_decode_varint(num_deep_scrub_errors, bl);
     } else {
       num_shallow_scrub_errors = 0;
       num_deep_scrub_errors = 0;
     }
     if (struct_v >= 7) {
-      ::decode(num_objects_dirty, bl);
-      ::decode(num_whiteouts, bl);
+      small_decode_varint(num_objects_dirty, bl);
+      small_decode_varint(num_whiteouts, bl);
     } else {
       num_objects_dirty = 0;
       num_whiteouts = 0;
     }
     if (struct_v >= 8) {
-      ::decode(num_objects_omap, bl);
+      small_decode_varint(num_objects_omap, bl);
     } else {
       num_objects_omap = 0;
     }
     if (struct_v >= 9) {
-      ::decode(num_objects_hit_set_archive, bl);
+      small_decode_varint(num_objects_hit_set_archive, bl);
     } else {
       num_objects_hit_set_archive = 0;
     }
     if (struct_v >= 10) {
-      ::decode(num_objects_misplaced, bl);
+      small_decode_varint(num_objects_misplaced, bl);
     } else {
       num_objects_misplaced = 0;
     }
     if (struct_v >= 11) {
-      ::decode(num_bytes_hit_set_archive, bl);
+      small_decode_varint(num_bytes_hit_set_archive, bl);
     } else {
       num_bytes_hit_set_archive = 0;
     }
     if (struct_v >= 12) {
-      ::decode(num_flush, bl);
-      ::decode(num_flush_kb, bl);
-      ::decode(num_evict, bl);
-      ::decode(num_evict_kb, bl);
-      ::decode(num_promote, bl);
+      small_decode_varint(num_flush, bl);
+      small_decode_varint(num_flush_kb, bl);
+      small_decode_varint(num_evict, bl);
+      small_decode_varint(num_evict_kb, bl);
+      small_decode_varint(num_promote, bl);
     } else {
       num_flush = 0;
       num_flush_kb = 0;
@@ -1984,10 +1985,10 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
       num_promote = 0;
     }
     if (struct_v >= 13) {
-      ::decode(num_flush_mode_high, bl);
-      ::decode(num_flush_mode_low, bl);
-      ::decode(num_evict_mode_some, bl);
-      ::decode(num_evict_mode_full, bl);
+      small_decode_varint(num_flush_mode_high, bl);
+      small_decode_varint(num_flush_mode_low, bl);
+      small_decode_varint(num_evict_mode_some, bl);
+      small_decode_varint(num_evict_mode_full, bl);
     } else {
       num_flush_mode_high = 0;
       num_flush_mode_low = 0;
@@ -1995,12 +1996,12 @@ void object_stat_sum_t::decode(bufferlist::iterator& bl)
       num_evict_mode_full = 0;
     }
     if (struct_v >= 14) {
-      ::decode(num_objects_pinned, bl);
+      small_decode_varint(num_objects_pinned, bl);
     } else {
       num_objects_pinned = 0;
     }
     if (struct_v >= 15) {
-      ::decode(num_objects_missing, bl);
+      small_decode_varint(num_objects_missing, bl);
     } else {
       num_objects_missing = 0;
     }
