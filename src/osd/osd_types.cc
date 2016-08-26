@@ -2293,20 +2293,20 @@ void pg_stat_t::encode(bufferlist &bl) const
 {
   ENCODE_START(22, 8, bl);
   ::encode(version, bl);
-  ::encode(reported_seq, bl);
-  ::encode(reported_epoch, bl);
-  ::encode(state, bl);
+  small_encode_varint(reported_seq, bl);
+  small_encode_varint(reported_epoch, bl);
+  small_encode_varint(state, bl);
   ::encode(log_start, bl);
   ::encode(ondisk_log_start, bl);
-  ::encode(created, bl);
-  ::encode(last_epoch_clean, bl);
+  small_encode_varint(created, bl);
+  small_encode_varint(last_epoch_clean, bl);
   ::encode(parent, bl);
-  ::encode(parent_split_bits, bl);
+  small_encode_varint(parent_split_bits, bl);
   ::encode(last_scrub, bl);
   ::encode(last_scrub_stamp, bl);
   ::encode(stats, bl);
-  ::encode(log_size, bl);
-  ::encode(ondisk_log_size, bl);
+  small_encode_varint(log_size, bl);
+  small_encode_varint(ondisk_log_size, bl);
   ::encode(up, bl);
   ::encode(acting, bl);
   ::encode(last_fresh, bl);
@@ -2314,15 +2314,15 @@ void pg_stat_t::encode(bufferlist &bl) const
   ::encode(last_active, bl);
   ::encode(last_clean, bl);
   ::encode(last_unstale, bl);
-  ::encode(mapping_epoch, bl);
+  small_encode_varint(mapping_epoch, bl);
   ::encode(last_deep_scrub, bl);
   ::encode(last_deep_scrub_stamp, bl);
   ::encode(stats_invalid, bl);
   ::encode(last_clean_scrub_stamp, bl);
   ::encode(last_became_active, bl);
   ::encode(dirty_stats_invalid, bl);
-  ::encode(up_primary, bl);
-  ::encode(acting_primary, bl);
+  small_encode_varint(up_primary, bl);
+  small_encode_varint(acting_primary, bl);
   ::encode(omap_stats_invalid, bl);
   ::encode(hitset_stats_invalid, bl);
   ::encode(blocked_by, bl);
@@ -2340,14 +2340,14 @@ void pg_stat_t::decode(bufferlist::iterator &bl)
   bool tmp;
   DECODE_START_LEGACY_COMPAT_LEN(22, 8, 8, bl);
   ::decode(version, bl);
-  ::decode(reported_seq, bl);
-  ::decode(reported_epoch, bl);
-  ::decode(state, bl);
+  small_decode_varint(reported_seq, bl);
+  small_decode_varint(reported_epoch, bl);
+  small_decode_varint(state, bl);
   ::decode(log_start, bl);
   ::decode(ondisk_log_start, bl);
-  ::decode(created, bl);
+  small_decode_varint(created, bl);
   if (struct_v >= 7)
-    ::decode(last_epoch_clean, bl);
+    small_decode_varint(last_epoch_clean, bl);
   else
     last_epoch_clean = 0;
   if (struct_v < 6) {
@@ -2357,7 +2357,7 @@ void pg_stat_t::decode(bufferlist::iterator &bl)
   } else {
     ::decode(parent, bl);
   }
-  ::decode(parent_split_bits, bl);
+  small_decode_varint(parent_split_bits, bl);
   ::decode(last_scrub, bl);
   ::decode(last_scrub_stamp, bl);
   if (struct_v <= 4) {
@@ -2386,8 +2386,8 @@ void pg_stat_t::decode(bufferlist::iterator &bl)
     ::decode(acting, bl);
   } else {
     ::decode(stats, bl);
-    ::decode(log_size, bl);
-    ::decode(ondisk_log_size, bl);
+    small_decode_varint(log_size, bl);
+    small_decode_varint(ondisk_log_size, bl);
     ::decode(up, bl);
     ::decode(acting, bl);
     if (struct_v >= 9) {
@@ -2396,7 +2396,7 @@ void pg_stat_t::decode(bufferlist::iterator &bl)
       ::decode(last_active, bl);
       ::decode(last_clean, bl);
       ::decode(last_unstale, bl);
-      ::decode(mapping_epoch, bl);
+      small_decode_varint(mapping_epoch, bl);
       if (struct_v >= 10) {
         ::decode(last_deep_scrub, bl);
         ::decode(last_deep_scrub_stamp, bl);
@@ -2428,8 +2428,8 @@ void pg_stat_t::decode(bufferlist::iterator &bl)
     dirty_stats_invalid = true;
   }
   if (struct_v >= 15) {
-    ::decode(up_primary, bl);
-    ::decode(acting_primary, bl);
+    small_decode_varint(up_primary, bl);
+    small_decode_varint(acting_primary, bl);
   } else {
     up_primary = up.size() ? up[0] : -1;
     acting_primary = acting.size() ? acting[0] : -1;

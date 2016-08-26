@@ -43,6 +43,7 @@
 #include "OpRequest.h"
 #include "include/cmp.h"
 #include "librados/ListObjectImpl.h"
+#include "include/small_encoding.h"
 #include <atomic>
 
 #define CEPH_OSD_ONDISK_MAGIC "ceph osd volume v026"
@@ -368,17 +369,17 @@ struct pg_t {
 
   void encode(bufferlist& bl) const {
     __u8 v = 1;
-    ::encode(v, bl);
-    ::encode(m_pool, bl);
-    ::encode(m_seed, bl);
-    ::encode(m_preferred, bl);
+    small_encode_varint(v, bl);
+    small_encode_varint(m_pool, bl);
+    small_encode_varint(m_seed, bl);
+    small_encode_varint(m_preferred, bl);
   }
   void decode(bufferlist::iterator& bl) {
     __u8 v;
-    ::decode(v, bl);
-    ::decode(m_pool, bl);
-    ::decode(m_seed, bl);
-    ::decode(m_preferred, bl);
+    small_decode_varint(v, bl);
+    small_decode_varint(m_pool, bl);
+    small_decode_varint(m_seed, bl);
+    small_decode_varint(m_preferred, bl);
   }
   void decode_old(bufferlist::iterator& bl) {
     old_pg_t opg;
@@ -760,20 +761,20 @@ public:
   string get_key_name() const;
 
   void encode(bufferlist &bl) const {
-#if defined(CEPH_LITTLE_ENDIAN)
-    bl.append((char *)this, sizeof(version_t) + sizeof(epoch_t));
-#else
-    ::encode(version, bl);
-    ::encode(epoch, bl);
-#endif
+//#if defined(CEPH_LITTLE_ENDIAN)
+//    bl.append((char *)this, sizeof(version_t) + sizeof(epoch_t));
+//#else
+    small_encode_varint(version, bl);
+    small_encode_varint(epoch, bl);
+//#endif
   }
   void decode(bufferlist::iterator &bl) {
-#if defined(CEPH_LITTLE_ENDIAN)
-    bl.copy(sizeof(version_t) + sizeof(epoch_t), (char *)this);
-#else
-    ::decode(version, bl);
-    ::decode(epoch, bl);
-#endif
+//#if defined(CEPH_LITTLE_ENDIAN)
+//    bl.copy(sizeof(version_t) + sizeof(epoch_t), (char *)this);
+//#else
+    small_decode_varint(version, bl);
+    small_decode_varint(epoch, bl);
+//#endif
   }
   void decode(bufferlist& bl) {
     bufferlist::iterator p = bl.begin();

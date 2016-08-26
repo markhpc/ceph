@@ -24,7 +24,7 @@
 #include "include/timegm.h"
 #include "common/strtol.h"
 #include "common/ceph_time.h"
-
+#include "include/small_encoding.h"
 
 // --------
 // utime_t
@@ -120,20 +120,20 @@ public:
       "utime_t have padding");
   }
   void encode(bufferlist &bl) const {
-#if defined(CEPH_LITTLE_ENDIAN)
-    bl.append((char *)(this), sizeof(__u32) + sizeof(__u32));
-#else
-    ::encode(tv.tv_sec, bl);
-    ::encode(tv.tv_nsec, bl);
-#endif
+//#if defined(CEPH_LITTLE_ENDIAN)
+//    bl.append((char *)(this), sizeof(__u32) + sizeof(__u32));
+//#else
+    small_encode_varint(tv.tv_sec, bl);
+    small_encode_varint(tv.tv_nsec, bl);
+//#endif
   }
   void decode(bufferlist::iterator &p) {
-#if defined(CEPH_LITTLE_ENDIAN)
-    p.copy(sizeof(__u32) + sizeof(__u32), (char *)(this));
-#else
-    ::decode(tv.tv_sec, p);
-    ::decode(tv.tv_nsec, p);
-#endif
+//#if defined(CEPH_LITTLE_ENDIAN)
+//    p.copy(sizeof(__u32) + sizeof(__u32), (char *)(this));
+//#else
+    small_decode_varint(tv.tv_sec, p);
+    small_decode_varint(tv.tv_nsec, p);
+//#endif
   }
 
   void encode_timeval(struct ceph_timespec *t) const {
