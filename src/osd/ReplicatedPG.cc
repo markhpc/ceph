@@ -9972,7 +9972,7 @@ void ReplicatedPG::on_removal(ObjectStore::Transaction *t)
 
   // clear log
   PGLogEntryHandler rollbacker;
-  pg_log.clear_can_rollback_to(&rollbacker);
+  pg_log.roll_forward(&rollbacker);
   rollbacker.apply(this, t);
 
   write_if_dirty(*t);
