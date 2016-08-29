@@ -12,8 +12,8 @@
 void bluefs_extent_t::encode(bufferlist& bl) const
 {
   ENCODE_START(1, 1, bl);
-  small_encode_lba(offset, bl);
-  small_encode_varint_lowz(length, bl);
+  ::encode(offset, bl);
+  ::encode(length, bl);
   ::encode(bdev, bl);
   ENCODE_FINISH(bl);
 }
@@ -21,8 +21,8 @@ void bluefs_extent_t::encode(bufferlist& bl) const
 void bluefs_extent_t::decode(bufferlist::iterator& p)
 {
   DECODE_START(1, p);
-  small_decode_lba(offset, p);
-  small_decode_varint_lowz(length, p);
+  ::decode(offset, p);
+  ::decode(length, p);
   ::decode(bdev, p);
   DECODE_FINISH(p);
 }
@@ -120,8 +120,8 @@ vector<bluefs_extent_t>::iterator bluefs_fnode_t::seek(
 void bluefs_fnode_t::encode(bufferlist& bl) const
 {
   ENCODE_START(1, 1, bl);
-  small_encode_varint(ino, bl);
-  small_encode_varint(size, bl);
+  ::encode(ino, bl);
+  ::encode(size, bl);
   ::encode(mtime, bl);
   ::encode(prefer_bdev, bl);
   ::encode(extents, bl);
@@ -131,8 +131,8 @@ void bluefs_fnode_t::encode(bufferlist& bl) const
 void bluefs_fnode_t::decode(bufferlist::iterator& p)
 {
   DECODE_START(1, p);
-  small_decode_varint(ino, p);
-  small_decode_varint(size, p);
+  ::decode(ino, p);
+  ::decode(size, p);
   ::decode(mtime, p);
   ::decode(prefer_bdev, p);
   ::decode(extents, p);
