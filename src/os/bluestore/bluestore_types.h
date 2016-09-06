@@ -132,7 +132,7 @@ struct bluestore_pextent_t : public AllocExtent{
     small_encode_u64gv2(offset, length, bl);
   }
   void decode(bufferlist::iterator& p) {
-    small_decode_u64gv2(offset, length, bl);
+    small_decode_u64gv2(offset, length, p);
   }
   void dump(Formatter *f) const;
   static void generate_test_instances(list<bluestore_pextent_t*>& ls);
