@@ -6,6 +6,201 @@
 #include "include/buffer.h"
 #include "include/int_types.h"
 
+
+#define MAX_8  256
+#define MAX_16 65536
+#define MAX_24 16777216
+#define MAX_32 4294967296
+#define MAX_40 1099511627776
+#define MAX_48 281474976710656
+#define MAX_56 72057594037927936
+
+// group varint encoding helper
+template<typename T>
+inline uint8_t small_encode_ugv_helper(T v, bufferlist& bl) {
+  if (v == 0) {
+    return 0;
+  }
+  if (v < MAX_8) {
+    ::encode((uint8_t) v, bl);
+    return 1;
+  }
+  if (v < MAX_16) {
+    ::encode((uint16_t) v, bl);
+    return 2;
+  }
+  if (v < MAX_32) {
+    ::encode((uint32_t) v, bl);
+    return 3;
+  }
+  if (v < MAX_40) {
+    ::encode((uint32_t) v, bl);
+    ::encode((uint8_t) (v >> 32), bl);
+    return 4;
+  }
+  if (v < MAX_48) {
+    ::encode((uint32_t) v, bl);
+    ::encode((uint16_t) (v >> 32), bl);
+    return 5;
+  }
+  if (v < MAX_56) {
+    ::encode((uint32_t) v, bl);
+    ::encode((uint16_t) (v >> 32), bl);
+    ::encode((uint8_t) (v >> 48), bl);
+    return 6;
+  }
+  ::encode((uint64_t) v, bl);
+  return 7;
+}
+
+// group varint decoding helper
+template<typename T>
+inline void small_decode_ugv_helper(uint8_t b, T& v, bufferlist::iterator& p) {
+  if (b == 0) {
+    v = (T) 0;
+    return;
+  }
+  if (b == 1) {
+    uint8_t byte;
+    ::decode(byte, p);
+    v = (T) byte;
+    return;
+  }
+  if (b == 2) {
+    uint16_t twobyte;
+    ::decode(twobyte, p);
+    v = (T) twobyte;
+    return;
+  }
+  if (b == 3) {
+    uint32_t fourbyte;
+    ::decode(fourbyte, p);
+    v = (T) fourbyte;
+    return;
+  }
+  if (b == 4) {
+   uint32_t fourbyte;
+   uint8_t byte;
+   ::decode(fourbyte, p);
+   ::decode(byte, p);
+   v = (T) fourbyte;
+   v |= (T) byte << 32;
+   return;
+  }
+  if (b == 5) {
+    uint32_t fourbyte;
+    uint16_t twobyte;
+    ::decode(fourbyte, p);
+    ::decode(twobyte, p);
+    v = (T) fourbyte;
+    v |= (T) twobyte << 32;
+    return;
+  }
+  if (b == 6) {
+    uint32_t fourbyte;
+    uint16_t twobyte;
+    uint8_t byte;
+    ::decode(fourbyte, p);
+    ::decode(twobyte, p);
+    ::decode(byte, p);
+    v = (T) fourbyte;
+    v |= (T) twobyte << 32;
+    v |= (T) byte << 48;
+    return;
+  }
+  if (b == 7) {
+    uint64_t eightbyte;
+    ::decode(eightbyte, p);
+    v = (T) eightbyte;
+    return;
+  }
+}
+
+// 4 uint32_t group varint encoding
+//
+// first byte is prefix, then bytes of 4 uint32_t values.
+inline void small_encode_u32gv4(uint32_t a, uint32_t b, uint32_t c,
+                                uint32_t d, bufferlist& bl)
+{
+  uint8_t prefix = 0;
+
+  // First we get the bl pos and encode the prefix
+  buffer::list::iterator prefix_it = bl.end();
+  ::encode(prefix, bl);
+
+  prefix += small_encode_ugv_helper(a, bl);
+  prefix += small_encode_ugv_helper(b, bl) >> 2;
+  prefix += small_encode_ugv_helper(c, bl) >> 4;
+  prefix += small_encode_ugv_helper(d, bl) >> 6;
+  prefix_it.copy_in(1, prefix);
+}
+
+inline void small_decode_u32gv4(uint32_t& a, uint32_t& b, uint32_t& c,
+                                uint32_t& d, bufferlist::iterator& p)
+{
+  uint8_t prefix;
+  ::decode(prefix, p);
+  small_decode_ugv_helper(prefix & 0x6f, a, p);
+  small_decode_ugv_helper((prefix << 2) & 0x6f, b, p);
+  small_decode_ugv_helper((prefix << 4) & 0x6f, c, p);
+  small_decode_ugv_helper((prefix << 6) & 0x6f, d, p);
+}
+
+// 2 uint64_t group varint encoding
+//
+// first byte is prefix, then bytes of 2 uint64_t values.
+inline void small_encode_u64gv2(uint64_t a, uint64_t b, bufferlist& bl) {
+  uint8_t prefix = 0;
+
+  // First we get the bl pos and encode the prefix
+  buffer::list::iterator prefix_it = bl.end();
+  prefix += small_encode_ugv_helper(a, bl);
+  prefix += small_encode_ugv_helper(b, bl) >> 3;
+  prefix_it.copy_in(1, prefix);
+}
+
+inline void small_decode_u64gv2(uint64_t& a, uint64_t& b,
+                                bufferlist::iterator& p)
+{
+  uint8_t prefix;
+  ::decode(prefix, p);
+  small_decode_ugv_helper(prefix & 0x5f, a, p);
+  small_decode_ugv_helper((prefix << 3) & 0x5f, b, p);
+}
+
+
+// 5 uint64_t group varint encoding
+//
+// first uint16_t is prefix, then bytes of 5 uint64_t values.
+inline void small_encode_u64gv5(uint64_t a, uint64_t b, uint64_t c,
+                                uint64_t d, uint64_t e, bufferlist& bl)
+{
+  uint16_t prefix = 0;
+
+  // First we get the bl pos and encode the prefix
+  buffer::list::iterator prefix_it = bl.end();
+  prefix += small_encode_ugv_helper(a, bl);
+  prefix += small_encode_ugv_helper(b, bl) >> 3;
+  prefix += small_encode_ugv_helper(c, bl) >> 6;
+  prefix += small_encode_ugv_helper(d, bl) >> 9;
+  prefix += small_encode_ugv_helper(e, bl) >> 12;
+  prefix_it.copy_in(2, prefix);
+}
+
+inline void small_decode_u64gv5(uint64_t& a, uint64_t& b, uint64_t& c,
+                                uint64_t& d, uint64_t& e,
+                                bufferlist::iterator& p)
+{
+  uint16_t prefix;
+  ::decode(prefix, p);
+  small_decode_ugv_helper(prefix & 0x5f, a, p);
+  small_decode_ugv_helper((prefix << 3) & 0x5f, b, p);
+  small_decode_ugv_helper((prefix << 6) & 0x5f, b, p);
+  small_decode_ugv_helper((prefix << 9) & 0x5f, b, p);
+  small_decode_ugv_helper((prefix << 12) & 0x5f, b, p);
+}
+
+
 // varint encoding
 //
 // high bit of every byte indicates whether another byte follows.
