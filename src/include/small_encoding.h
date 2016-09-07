@@ -150,7 +150,7 @@ inline void small_decode_u32gv4(uint32_t& a, uint32_t& b, uint32_t& c,
 //
 // first byte is prefix, then bytes of 2 uint64_t values.
 template<typename T>
-inline void small_encode_gv(T a, T b, bufferlist& bl) {
+inline void small_encode_gv2(T a, T b, bufferlist& bl) {
   uint8_t prefix = 0;
 
   // First we get the bl pos and encode the prefix
@@ -161,7 +161,7 @@ inline void small_encode_gv(T a, T b, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_decode_gv(T& a, T& b, bufferlist::iterator& p) {
+inline void small_decode_gv2(T& a, T& b, bufferlist::iterator& p) {
   uint8_t prefix;
   ::decode(prefix, p);
   small_decode_ugv_helper(prefix & 0x5f, a, p);
@@ -173,7 +173,7 @@ inline void small_decode_gv(T& a, T& b, bufferlist::iterator& p) {
 //
 // first uint16_t is prefix, then bytes of 5 uint64_t values.
 template<typename T>
-inline void small_encode_gv(T a, T b, T c, T d, T e, bufferlist& bl) {
+inline void small_encode_gv5(T a, T b, T c, T d, T e, bufferlist& bl) {
   uint16_t prefix = 0;
 
   // First we get the bl pos and encode the prefix
@@ -187,7 +187,7 @@ inline void small_encode_gv(T a, T b, T c, T d, T e, bufferlist& bl) {
 }
 
 template<typename T>
-inline void small_decode_gv(T& a, T& b, T& c, T& d, T& e, 
+inline void small_decode_gv5(T& a, T& b, T& c, T& d, T& e, 
                             bufferlist::iterator& p)
 {
   uint16_t prefix;
