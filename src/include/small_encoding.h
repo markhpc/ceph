@@ -146,10 +146,11 @@ inline void small_decode_u32gv4(uint32_t& a, uint32_t& b, uint32_t& c,
   small_decode_ugv_helper((prefix << 6) & 0x6f, d, p);
 }
 
-// 2 uint64_t group varint encoding
+// 2 64 bit group varint encoding
 //
 // first byte is prefix, then bytes of 2 uint64_t values.
-inline void small_encode_u64gv2(uint64_t a, uint64_t b, bufferlist& bl) {
+template<typename T>
+inline void small_encode_gv(T a, T b, bufferlist& bl) {
   uint8_t prefix = 0;
 
   // First we get the bl pos and encode the prefix
@@ -159,9 +160,8 @@ inline void small_encode_u64gv2(uint64_t a, uint64_t b, bufferlist& bl) {
   prefix_it.copy_in(1, prefix);
 }
 
-inline void small_decode_u64gv2(uint64_t& a, uint64_t& b,
-                                bufferlist::iterator& p)
-{
+template<typename T>
+inline void small_decode_gv(T& a, T& b, bufferlist::iterator& p) {
   uint8_t prefix;
   ::decode(prefix, p);
   small_decode_ugv_helper(prefix & 0x5f, a, p);
@@ -169,12 +169,11 @@ inline void small_decode_u64gv2(uint64_t& a, uint64_t& b,
 }
 
 
-// 5 uint64_t group varint encoding
+// 5 64 bit group varint encoding
 //
 // first uint16_t is prefix, then bytes of 5 uint64_t values.
-inline void small_encode_u64gv5(uint64_t a, uint64_t b, uint64_t c,
-                                uint64_t d, uint64_t e, bufferlist& bl)
-{
+template<typename T>
+inline void small_encode_gv(T a, T b, T c, T d, T e, bufferlist& bl) {
   uint16_t prefix = 0;
 
   // First we get the bl pos and encode the prefix
@@ -187,9 +186,9 @@ inline void small_encode_u64gv5(uint64_t a, uint64_t b, uint64_t c,
   prefix_it.copy_in(2, prefix);
 }
 
-inline void small_decode_u64gv5(uint64_t& a, uint64_t& b, uint64_t& c,
-                                uint64_t& d, uint64_t& e,
-                                bufferlist::iterator& p)
+template<typename T>
+inline void small_decode_gv(T& a, T& b, T& c, T& d, T& e, 
+                            bufferlist::iterator& p)
 {
   uint16_t prefix;
   ::decode(prefix, p);
