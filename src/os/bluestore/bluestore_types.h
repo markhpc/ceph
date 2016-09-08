@@ -130,6 +130,9 @@ struct bluestore_pextent_t : public AllocExtent{
 
   void encode(bufferlist& bl) const {
     small_encode_gv2(offset, length, bl);
+    derr << __func__ << ":";
+    bl.hexdump(*_dout);
+    _dout << dendl;
   }
   void decode(bufferlist::iterator& p) {
     small_decode_gv2(offset, length, p);
