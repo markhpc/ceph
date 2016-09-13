@@ -79,20 +79,32 @@ struct denc_traits {
   is defined and true.  They never need to be written explicitly.
 
 
-  static traits methods look like so
-  ==================================
+  static denc_traits<> definitions look like so
+  =============================================
 
-    static void bound_encode(const T &o, size_t& p, uint64_t f=0);
-    static void encode(const T &o, buffer::list::contiguous_appender& p,
-		       uint64_t f=0);
-    static void decode(T& o, buffer::ptr::iterator &p);
+    template<>
+    struct denc_traits<T> {
+      enum { supported = true };
+      enum { bounded = false };
+      enum { featured = false };
+      static void bound_encode(const T &o, size_t& p, uint64_t f=0);
+      static void encode(const T &o, buffer::list::contiguous_appender& p,
+		         uint64_t f=0);
+      static void decode(T& o, buffer::ptr::iterator &p);
+    };
 
   or (for featured objects)
 
-    static void bound_encode(const T &o, size_t& p, uint64_t f);
-    static void encode(const T &o, buffer::list::contiguous_appender& p,
-		       uint64_t f);
-    static void decode(T& o, buffer::ptr::iterator &p);
+    template<>
+    struct denc_traits<T> {
+      enum { supported = true };
+      enum { bounded = false };
+      enum { featured = true };
+      static void bound_encode(const T &o, size_t& p, uint64_t f);
+      static void encode(const T &o, buffer::list::contiguous_appender& p,
+		         uint64_t f);
+      static void decode(T& o, buffer::ptr::iterator &p);
+    };
 
   - denc_traits<T> is normally declared via the WRITE_CLASS_DENC(type) macro,
   which is used in place of the old-style WRITE_CLASS_ENCODER(type) macro.
