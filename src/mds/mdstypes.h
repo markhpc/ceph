@@ -1066,6 +1066,11 @@ inline void encode(const inode_load_vec_t &c, bufferlist &bl) { c.encode(bl); }
 inline void decode(inode_load_vec_t & c, const utime_t &t, bufferlist::iterator &p) {
   c.decode(t, p);
 }
+// for dencoder
+inline void decode(inode_load_vec_t & c, bufferlist::iterator &p) {
+  utime_t sample;
+  c.decode(sample, p);
+}
 
 class dirfrag_load_vec_t {
 public:
@@ -1145,6 +1150,11 @@ inline void encode(const dirfrag_load_vec_t &c, bufferlist &bl) { c.encode(bl); 
 inline void decode(dirfrag_load_vec_t& c, const utime_t &t, bufferlist::iterator &p) {
   c.decode(t, p);
 }
+// this for dencoder
+inline void decode(dirfrag_load_vec_t& c, bufferlist::iterator &p) {
+  utime_t sample;
+  c.decode(sample, p);
+}
 
 inline std::ostream& operator<<(std::ostream& out, dirfrag_load_vec_t& dl)
 {
@@ -1196,6 +1206,11 @@ struct mds_load_t {
 inline void encode(const mds_load_t &c, bufferlist &bl) { c.encode(bl); }
 inline void decode(mds_load_t &c, const utime_t &t, bufferlist::iterator &p) {
   c.decode(t, p);
+}
+// this one is for dencoder
+inline void decode(mds_load_t &c, bufferlist::iterator &p) {
+  utime_t sample;
+  c.decode(sample, p);
 }
 
 inline std::ostream& operator<<( std::ostream& out, mds_load_t& load )
