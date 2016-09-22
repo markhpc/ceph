@@ -1433,7 +1433,7 @@ bool BlueStore::ExtentMap::update(Onode *o, KeyValueDB::Transaction t,
     if (inline_bl.length() == 0) {
       unsigned n;
       size_t bound = 0;
-      bound_some(0, OBJECT_MAX_SIZE, bound)
+      bound_some(0, OBJECT_MAX_SIZE, bound);
       if (encode_some(bound, inline_bl, &n)) {
 	return true;
       }
