@@ -1431,12 +1431,14 @@ bool BlueStore::ExtentMap::update(Onode *o, KeyValueDB::Transaction t,
 {
   if (o->onode.extent_map_shards.empty()) {
     if (inline_bl.length() == 0) {
-      unsigned n;
+      unsigned n = 0;
       size_t bound = 0;
-      bound_some(0, OBJECT_MAX_SIZE, bound);
-      if (encode_some(bound, inline_bl, &n)) {
-	return true;
+      if (bound_some(0, OBJECT_MAX_SIZE, bound)) {
+        return true;
       }
+      auto app = inline_bl.get_contiguous_appender(bound);
+      encode_n(n, app);
+      encode_some(0, OBJECT_SIZE_MAX, bound, app); 
       size_t len = inline_bl.length();
       dout(20) << __func__ << " inline shard "
 	       << len << " bytes from " << n << " extents" << dendl;
@@ -1458,12 +1460,14 @@ bool BlueStore::ExtentMap::update(Onode *o, KeyValueDB::Transaction t,
 	  endoff = n->offset;
 	}
 	bufferlist bl;
-	unsigned n;
+	unsigned n = 0;
         size_t bound = 0;
-        bound_some(p->offset, endoff - p->offset, bound);
-	if (encode_some(bound, bl, &n)) {
-	  return true;
-	}
+        if (bound_some(p->offset, endoff - p->offset, bound)) {
+          return true;
+        }
+        auto app = bl.get_contiguous_appender(bound);
+        encode_n(n, app);
+	encode_some(p->offset, endoff - p->offset, bound, app);
 	dout(20) << __func__ << " shard 0x" << std::hex
 		 << p->offset << std::dec << " is " << bl.length()
 		 << " bytes (was " << p->shard_info->bytes << ") from " << n
@@ -1609,14 +1613,15 @@ void BlueStore::ExtentMap::reshard(Onode *o)
   }
 }
 
-void Bluestore::ExtentMap::bound_some(uint32_t offset, uint32_t length,
-                                       size_t& bound)
+
+
+bool BlueStore::ExtentMap::bound_some(uint32_t offset, uint32_t length,
+                                       size_t& bound, unsigned& n)
 {
   Extent dummy(offset);
   auto start = extent_map.lower_bound(dummy);
   uint32_t end = offset + length;
 
-  unsigned n = 0;
   denc_varint(0, bound);
   for (auto p = start;
        p != extent_map.end() && p->logical_offset < end;
@@ -1634,60 +1639,61 @@ void Bluestore::ExtentMap::bound_some(uint32_t offset, uint32_t length,
     denc_varint(0, bound); // blob_offset
     p->blob->bound_encode(bound);
   }
+  return false;
 }
 
-bool BlueStore::ExtentMap::encode_some(size_t& bound, bufferlist& bl, unsigned *pn)
-{
-  {
-    auto app = bl.get_contiguous_appender(bound);
-    denc_varint(n, app);
-    if (pn) {
-      *pn = n;
-    }
+void BlueStore::ExtentMap::encode_n(unsigned n, &contiguous_appender app) {
+  denc_varint(n, app);
+}
 
-    n = 0;
-    uint64_t pos = 0;
-    uint64_t prev_len = 0;
-    for (auto p = start;
-	 p != extent_map.end() && p->logical_offset < end;
-	 ++p, ++n) {
-      unsigned blobid;
-      bool include_blob = false;
-      if (p->blob->id >= 0) {
-	blobid = p->blob->id << BLOBID_SHIFT_BITS;
-	blobid |= BLOBID_FLAG_SPANNING;
-      } else if (p->blob->last_encoded_id < 0) {
-	p->blob->last_encoded_id = n + 1;  // so it is always non-zero
-	include_blob = true;
-	blobid = 0;  // the decoder will infer the id from n
-      } else {
-	blobid = p->blob->last_encoded_id << BLOBID_SHIFT_BITS;
-      }
-      if (p->logical_offset == pos) {
-	blobid |= BLOBID_FLAG_CONTIGUOUS;
-      }
-      if (p->blob_offset == 0) {
-	blobid |= BLOBID_FLAG_ZEROOFFSET;
-      }
-      if (p->length == prev_len) {
-	blobid |= BLOBID_FLAG_SAMELENGTH;
-      } else {
-	prev_len = p->length;
-      }
-      denc_varint(blobid, app);
-      if ((blobid & BLOBID_FLAG_CONTIGUOUS) == 0) {
-	denc_varint_lowz(p->logical_offset - pos, app);
-      }
-      if ((blobid & BLOBID_FLAG_ZEROOFFSET) == 0) {
-	denc_varint_lowz(p->blob_offset, app);
-      }
-      if ((blobid & BLOBID_FLAG_SAMELENGTH) == 0) {
-	denc_varint_lowz(p->length, app);
-      }
-      pos = p->logical_offset + p->length;
-      if (include_blob) {
-	p->blob->encode(app);
-      }
+void BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length, size_t& bound, 
+                                        &contiguous_appender app)
+{
+  Extent dummy(offset);
+  auto start = extent_map.lower_bound(dummy);
+  uint32_t end = offset + length;
+
+  unsigned n = 0;
+  uint64_t pos = 0;
+  uint64_t prev_len = 0;
+  for (auto p = start;
+       p != extent_map.end() && p->logical_offset < end; ++p, ++n) {
+    unsigned blobid;
+    bool include_blob = false;
+    if (p->blob->id >= 0) {
+      blobid = p->blob->id << BLOBID_SHIFT_BITS;
+      blobid |= BLOBID_FLAG_SPANNING;
+    } else if (p->blob->last_encoded_id < 0) {
+      p->blob->last_encoded_id = n + 1;  // so it is always non-zero
+      include_blob = true;
+      blobid = 0;  // the decoder will infer the id from n
+    } else {
+      blobid = p->blob->last_encoded_id << BLOBID_SHIFT_BITS;
+    }
+    if (p->logical_offset == pos) {
+      blobid |= BLOBID_FLAG_CONTIGUOUS;
+    }
+    if (p->blob_offset == 0) {
+      blobid |= BLOBID_FLAG_ZEROOFFSET;
+    }
+     if (p->length == prev_len) {
+      blobid |= BLOBID_FLAG_SAMELENGTH;
+    } else {
+      prev_len = p->length;
+    }
+    denc_varint(blobid, app);
+    if ((blobid & BLOBID_FLAG_CONTIGUOUS) == 0) {
+      denc_varint_lowz(p->logical_offset - pos, app);
+    }
+    if ((blobid & BLOBID_FLAG_ZEROOFFSET) == 0) {
+      denc_varint_lowz(p->blob_offset, app);
+    }
+    if ((blobid & BLOBID_FLAG_SAMELENGTH) == 0) {
+      denc_varint_lowz(p->length, app);
+    }
+    pos = p->logical_offset + p->length;
+    if (include_blob) {
+      p->blob->encode(app);
     }
   }
   /*derr << __func__ << bl << dendl;
@@ -1695,7 +1701,6 @@ bool BlueStore::ExtentMap::encode_some(size_t& bound, bufferlist& bl, unsigned *
   bl.hexdump(*_dout);
   *_dout << dendl;
   */
-  return false;
 }
 
 void BlueStore::ExtentMap::decode_some(bufferlist& bl)
