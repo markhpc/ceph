@@ -1432,7 +1432,9 @@ bool BlueStore::ExtentMap::update(Onode *o, KeyValueDB::Transaction t,
   if (o->onode.extent_map_shards.empty()) {
     if (inline_bl.length() == 0) {
       unsigned n;
-      if (encode_some(0, OBJECT_MAX_SIZE, inline_bl, &n)) {
+      size_t bound = 0;
+      bound_some(0, OBJECT_MAX_SIZE, bound)
+      if (encode_some(bound, inline_bl, &n)) {
 	return true;
       }
       size_t len = inline_bl.length();
@@ -1457,7 +1459,9 @@ bool BlueStore::ExtentMap::update(Onode *o, KeyValueDB::Transaction t,
 	}
 	bufferlist bl;
 	unsigned n;
-	if (encode_some(p->offset, endoff - p->offset, bl, &n)) {
+        size_t bound = 0;
+        bound_some(p->offset, endoff - p->offset, bound);
+	if (encode_some(bound, bl, &n)) {
 	  return true;
 	}
 	dout(20) << __func__ << " shard 0x" << std::hex
@@ -1605,15 +1609,14 @@ void BlueStore::ExtentMap::reshard(Onode *o)
   }
 }
 
-bool BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length,
-				       bufferlist& bl, unsigned *pn)
+void Bluestore::ExtentMap::bound_some(uint32_t offset, uint32_t length,
+                                       size_t& bound)
 {
   Extent dummy(offset);
   auto start = extent_map.lower_bound(dummy);
   uint32_t end = offset + length;
 
   unsigned n = 0;
-  size_t bound = 0;
   denc_varint(0, bound);
   for (auto p = start;
        p != extent_map.end() && p->logical_offset < end;
@@ -1622,7 +1625,7 @@ bool BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length,
     p->blob->last_encoded_id = -1;
     if (p->blob->id < 0 && p->blob_escapes_range(offset, length)) {
       dout(30) << __func__ << " 0x" << std::hex << offset << "~" << length
-	       << std::dec << " hit new spanning blob " << *p << dendl;
+               << std::dec << " hit new spanning blob " << *p << dendl;
       return true;
     }
     denc_varint(0, bound); // blobid
@@ -1631,7 +1634,10 @@ bool BlueStore::ExtentMap::encode_some(uint32_t offset, uint32_t length,
     denc_varint(0, bound); // blob_offset
     p->blob->bound_encode(bound);
   }
+}
 
+bool BlueStore::ExtentMap::encode_some(size_t& bound, bufferlist& bl, unsigned *pn)
+{
   {
     auto app = bl.get_contiguous_appender(bound);
     denc_varint(n, app);
