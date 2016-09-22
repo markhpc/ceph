@@ -567,8 +567,8 @@ public:
       extent_map.clear_and_dispose([&](Extent *e) { delete e; });
     }
 
-    bool encode_some(uint32_t offset, uint32_t length, bufferlist& bl,
-		     unsigned *pn);
+    void bound_some(uint32_t offset, uint32_t length, size_t& bound);
+    bool encode_some(size_t& bound, bufferlist& bl, unsigned *pn);
     void decode_some(bufferlist& bl);
 
     void bound_encode_spanning_blobs(size_t& p);
