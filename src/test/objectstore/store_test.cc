@@ -4184,6 +4184,8 @@ TEST_P(StoreTest, SyntheticMatrixSharding) {
     { "bluestore_extent_map_shard_min_size", "60", 0 },
     { "bluestore_extent_map_shard_max_size", "300", 0 },
     { "bluestore_extent_map_shard_target_size", "150", 0 },
+    { "bluestore_default_buffered_read", "true", 0 },
+    { "bluestore_default_buffered_write", "true", 0 },
     { 0 },
   };
   do_matrix(m, store);
@@ -4249,6 +4251,7 @@ TEST_P(StoreTest, SyntheticMatrixCsumAlgorithm) {
     { "bluestore_min_alloc_size", "65536", 0 },
     { "bluestore_csum_type", "crc32c", "crc32c_16", "crc32c_8", "xxhash32",
       "xxhash64", "none", 0 },
+    { "bluestore_default_buffered_write", "false", 0 },
     { 0 },
   };
   do_matrix(m, store);
@@ -4266,6 +4269,7 @@ TEST_P(StoreTest, SyntheticMatrixCsumVsCompression) {
     { "bluestore_compression", "force", "none", 0},
     { "bluestore_csum_type", "crc32c", 0 },
     { "bluestore_default_buffered_read", "true", "false", 0 },
+    { "bluestore_default_buffered_write", "true", "false", 0 },
     { 0 },
   };
   do_matrix(m, store);
@@ -4281,6 +4285,7 @@ TEST_P(StoreTest, SyntheticMatrixCompression) {
     { "alignment", "65536", 0 },
     { "bluestore_min_alloc_size", "4096", "65536", 0 },
     { "bluestore_compression", "force", "aggressive", "passive", "none", 0},
+    { "bluestore_default_buffered_write", "false", 0 },
     { 0 },
   };
   do_matrix(m, store);
@@ -4296,6 +4301,7 @@ TEST_P(StoreTest, SyntheticMatrixCompressionAlgorithm) {
     { "alignment", "65536", 0 },
     { "bluestore_compression_algorithm", "zlib", "snappy", 0 },
     { "bluestore_compression", "force", 0 },
+    { "bluestore_default_buffered_write", "false", 0 },
     { 0 },
   };
   do_matrix(m, store);
@@ -4314,6 +4320,7 @@ TEST_P(StoreTest, SyntheticMatrixNoCsum) {
     { "bluestore_compression", "force", "none", 0},
     { "bluestore_csum_type", "none", 0},
     { "bluestore_default_buffered_read", "true", "false", 0 },
+    { "bluestore_default_buffered_write", "true", 0 },
     { 0 },
   };
   do_matrix(m, store);
