@@ -406,7 +406,7 @@ public:
   };
 
   /// in-memory blob metadata and associated cached buffers (if any)
-  struct Blob : public boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true>> {
+  struct Blob {
     std::atomic_int nref = {0};     ///< reference count
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
@@ -429,17 +429,6 @@ public:
     friend void intrusive_ptr_release(Blob *b) { b->put(); }
 
     friend ostream& operator<<(ostream& out, const Blob &b);
-
-    // comparators for intrusive_set
-    friend bool operator<(const Blob &a, const Blob &b) {
-      return a.id < b.id;
-    }
-    friend bool operator>(const Blob &a, const Blob &b) {
-      return a.id > b.id;
-    }
-    friend bool operator==(const Blob &a, const Blob &b) {
-      return a.id == b.id;
-    }
 
     bool is_spanning() const {
       return id >= 0;
@@ -518,7 +507,7 @@ public:
     }
   };
   typedef boost::intrusive_ptr<Blob> BlobRef;
-  typedef boost::intrusive::set<Blob> blob_map_t;
+  typedef std::map<int,BlobRef> blob_map_t;
 
   /// a logical extent, pointing to (some portion of) a blob
   struct Extent : public boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true>> {
@@ -603,7 +592,6 @@ public:
 
     ExtentMap(Onode *o);
     ~ExtentMap() {
-      spanning_blob_map.clear_and_dispose([&](Blob *b) { b->put(); });
       extent_map.clear_and_dispose([&](Extent *e) { delete e; });
     }
 
@@ -614,7 +602,11 @@ public:
     void encode_spanning_blobs(bufferlist& bl);
     void decode_spanning_blobs(Collection *c, bufferlist::iterator& p);
 
-    BlobRef get_spanning_blob(int id);
+    BlobRef get_spanning_blob(int id) {
+      auto p = spanning_blob_map.find(id);
+      assert(p != spanning_blob_map.end());
+      return p->second;
+    }
 
     bool update(Onode *on, KeyValueDB::Transaction t, bool force);
     void reshard(Onode *on, uint64_t min_alloc_size);
