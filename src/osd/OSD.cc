@@ -1925,8 +1925,8 @@ bool OSD::asok_command(string command, cmdmap_t& cmdmap, string format,
   } else if (command == "dump_mempools") {
     f->open_object_section("mempools");
     f->dump_unsigned("total_bytes", bluestore::allocated_bytes());
-    mempool::DumpStatsByBytes("bluestore", f, 100);
     mempool::DumpStatsByTypeID("bluestore", f, 100);
+    mempool::DumpStatsByBytes("bluestore", f, 100);
     mempool::DumpStatsByItems("bluestore", f, 100);
     f->close_section();
   } else {
