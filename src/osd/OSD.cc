@@ -43,6 +43,8 @@
 #include "common/version.h"
 #include "common/io_priority.h"
 
+#include "include/mempool.h"
+
 #include "os/ObjectStore.h"
 #ifdef HAVE_LIBFUSE
 #include "os/FuseStore.h"
@@ -1920,6 +1922,13 @@ bool OSD::asok_command(string command, cmdmap_t& cmdmap, string format,
     f->dump_bool("success", success);
     f->dump_int("value", value);
     f->close_section();
+  } else if (command == "dump_mempools") {
+    f->open_object_section("mempools");
+    f->dump_unsigned("total_bytes", bluestore::allocated_bytes());
+    mempool::DumpStatsByBytes("bluestore", f, 100);
+    mempool::DumpStatsByTypeID("bluestore", f, 100);
+    mempool::DumpStatsByItems("bluestore", f, 100);
+    f->close_section();
   } else {
     assert(0 == "broken asok registration");
   }
@@ -2379,6 +2388,11 @@ void OSD::final_init()
 				     "get malloc extension heap property");
   assert(r == 0);
 
+  r = admin_socket->register_command("dump_mempools",
+				     "dump_mempools",
+				     asok_hook,
+				     "get mempool stats");
+  assert(r == 0);
 
   test_ops_hook = new TestOpsSocketHook(&(this->service), this->store);
   // Note: pools are CephString instead of CephPoolname because
@@ -2693,6 +2707,7 @@ int OSD::shutdown()
   cct->get_admin_socket()->unregister_command("get_latest_osdmap");
   cct->get_admin_socket()->unregister_command("set_heap_property");
   cct->get_admin_socket()->unregister_command("get_heap_property");
+  cct->get_admin_socket()->unregister_command("dump_mempools");
   delete asok_hook;
   asok_hook = NULL;
 

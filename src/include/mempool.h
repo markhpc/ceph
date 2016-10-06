@@ -166,10 +166,10 @@ struct list_member_t {
 };
 
 struct shard_t {
-   std::atomic<size_t> allocated;
-   mutable std::mutex lock;  // Only used for containers list
-   list_member_t containers;
-   shard_t() : allocated(0) {}
+  std::atomic<size_t> bytes, items;
+  mutable std::mutex lock;  // Only used for containers list
+  list_member_t containers;
+  shard_t() : bytes(0), items(0) {}
 };
 
 //
@@ -177,42 +177,29 @@ struct shard_t {
 //
 struct StatsByBytes_t {
    const char* typeID;
-   size_t slots;
-   size_t slabs;
-   StatsByBytes_t() : typeID(nullptr), slots(0), slabs(0) {}
+  size_t items;
+   StatsByBytes_t() : typeID(nullptr), items(0) {}
    void dump(ceph::Formatter *f) const;
 };
-struct StatsBySlots_t {
+struct StatsByItems_t {
    const char *typeID;
-   size_t slabs;
    size_t bytes;
-   StatsBySlots_t() : typeID(nullptr), slabs(0), bytes(0) {}
+  StatsByItems_t() : typeID(nullptr), bytes(0) {}
    void dump(ceph::Formatter *f) const;
 };
-struct StatsBySlabs_t {
-   const char *typeID;
-   size_t slots;
-   size_t bytes;
-   StatsBySlabs_t() : typeID(nullptr), slots(0), bytes(0) {}
-   void dump(ceph::Formatter *f) const;
-};
-
 struct StatsByTypeID_t {
-   size_t slots;
-   size_t slabs;
+  size_t items;
    size_t bytes;
-   StatsByTypeID_t() : slots(0), slabs(0), bytes(0) {}
+   StatsByTypeID_t() : items(0), bytes(0) {}
    void dump(ceph::Formatter *f) const;
 };
 
 void FormatStatsByBytes(const std::multimap<size_t,StatsByBytes_t>&m, ceph::Formatter *f);
-void FormatStatsBySlots(const std::multimap<size_t,StatsBySlots_t>&m, ceph::Formatter *f);
-void FormatStatsBySlabs(const std::multimap<size_t,StatsBySlabs_t>&m, ceph::Formatter *f);
+void FormatStatsByItems(const std::multimap<size_t,StatsByItems_t>&m, ceph::Formatter *f);
 void FormatStatsByTypeID(const std::map<const char *,StatsByTypeID_t>&m, ceph::Formatter *f);
 
 void DumpStatsByBytes(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
-void DumpStatsBySlots(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
-void DumpStatsBySlabs(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
+void DumpStatsByItems(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
 void DumpStatsByTypeID(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
 
 //
@@ -225,16 +212,14 @@ struct pool_allocator_base_t {
    pool_t *pool;
    shard_t *shard;
    const char *typeID;
-   size_t slots;
-   size_t slabs;
-   size_t bytes;
-   pool_allocator_base_t() : pool(nullptr), shard(nullptr), typeID(nullptr), slots(0), slabs(0), bytes(0) {}
+  std::atomic<size_t> items;
+  std::atomic<size_t> bytes;
+   pool_allocator_base_t() : pool(nullptr), shard(nullptr), typeID(nullptr), items(0), bytes(0) {}
    //
    // Helper functions for Stats
    //
    void UpdateStats(std::multimap<size_t,StatsByBytes_t>& byBytes) const;
-   void UpdateStats(std::multimap<size_t,StatsBySlots_t>& bySlots) const;
-   void UpdateStats(std::multimap<size_t,StatsBySlabs_t>& bySlabs) const;
+   void UpdateStats(std::multimap<size_t,StatsByItems_t>& bySlots) const;
    void UpdateStats(std::map<const char *,StatsByTypeID_t>& byTypeID) const;
    //
    // Effective constructor
@@ -252,9 +237,9 @@ class pool_t {
    static std::mutex pool_head_lock;
    std::string name;
    shard_t shard[shard_size];
-   bool debug;
    friend class pool_allocator_base_t;
 public:
+   bool debug;
    //
    // How much this pool consumes. O(<shard-size>)
    //
@@ -263,8 +248,7 @@ public:
    // Aggregate stats by consumed.
    //
    static void StatsByBytes(const std::string& prefix,std::multimap<size_t,StatsByBytes_t>& bybytes,size_t trim);
-   static void StatsBySlots(const std::string& prefix,std::multimap<size_t,StatsBySlots_t>& bySlots,size_t trim);
-   static void StatsBySlabs(const std::string& prefix,std::multimap<size_t,StatsBySlabs_t>& bySlabs,size_t trim);
+   static void StatsByItems(const std::string& prefix,std::multimap<size_t,StatsByItems_t>& bySlots,size_t trim);
    static void StatsByTypeID(const std::string& prefix,std::map<const char *,StatsByTypeID_t>& byTypeID,size_t trim);
    shard_t* pick_a_shard() {
       size_t me = (size_t)pthread_self(); // Dirt cheap, see: http://fossies.org/dox/glibc-2.24/pthread__self_8c_source.html
@@ -429,10 +413,22 @@ public:
    pointer allocate(size_t cnt,void *p = nullptr) {
       assert(cnt == 1); // if you fail this you've used this class with the wrong STL container.
       //assert(sizeof(slot_t) == trueSlotSize);
+      shard->bytes += sizeof(T);
+      ++shard->items;
+      if (pool->debug) {
+	bytes += sizeof(T);
+	++items;
+      }
       return reinterpret_cast<pointer>(new char[sizeof(T)]);
    }
 
    void deallocate(pointer p, size_type s) {
+     shard->bytes -= sizeof(T);
+     --shard->items;
+      if (pool->debug) {
+	bytes -= sizeof(T);
+	--items;
+      }
      delete[] reinterpret_cast<char*>(p);
    }
 
