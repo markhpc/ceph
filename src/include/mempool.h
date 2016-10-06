@@ -130,7 +130,8 @@ namespace mempool {
 //
 #define DEFINE_MEMORY_POOLS_HELPER(f) \
    f(unittest_1) \
-   f(unittest_2)
+   f(unittest_2) \
+   f(bluestore)
 
 
 #define P(x) x,
@@ -587,8 +588,8 @@ public:
       // If you fail here, it's because you've allowed a node to escape the enclosing object. Something like a swap
       // or a splice operation. Probably the slab_xxx container is missing a "using" that serves to hide some operation.
       //
-      assert(freeSlotCount == stackSize);
-      assert(freeSlabHeads.next == &stackSlab.slabHead); // Empty list should have stack slab on it
+     //assert(freeSlotCount == stackSize);
+     //assert(freeSlabHeads.next == &stackSlab.slabHead); // Empty list should have stack slab on it
    }
 
    pointer allocate(size_t cnt,void *p = nullptr) {

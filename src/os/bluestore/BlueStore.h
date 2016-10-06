@@ -32,6 +32,7 @@
 #include "include/assert.h"
 #include "include/unordered_map.h"
 #include "include/memory.h"
+#include "include/mempool.h"
 #include "common/Finisher.h"
 #include "compressor/Compressor.h"
 #include "os/ObjectStore.h"
@@ -118,6 +119,8 @@ public:
 
   /// cached buffer
   struct Buffer {
+    MEMBER_OF_MEMPOOL();
+
     enum {
       STATE_EMPTY,     ///< empty buffer -- used for cache history
       STATE_CLEAN,     ///< clean data that is up to date
@@ -407,6 +410,8 @@ public:
 
   /// in-memory blob metadata and associated cached buffers (if any)
   struct Blob {
+    MEMBER_OF_MEMPOOL();
+
     std::atomic_int nref = {0};     ///< reference count
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
@@ -511,6 +516,8 @@ public:
 
   /// a logical extent, pointing to (some portion of) a blob
   struct Extent : public boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true>> {
+    MEMBER_OF_MEMPOOL();
+
     uint32_t logical_offset = 0;      ///< logical offset
     uint32_t blob_offset = 0;         ///< blob offset
     uint32_t length = 0;              ///< length
@@ -689,6 +696,8 @@ public:
 
   /// an in-memory object
   struct Onode {
+    MEMBER_OF_MEMPOOL();
+
     std::atomic_int nref;  ///< reference count
     Collection *c;
 
