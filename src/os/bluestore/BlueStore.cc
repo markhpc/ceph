@@ -33,10 +33,10 @@
 
 #define dout_subsys ceph_subsys_bluestore
 
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Buffer, bluestore_buffer, bluestore, 0)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Extent, bluestore_extent, bluestore, 0)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Onode, bluestore_onode, bluestore, 0)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Blob, bluestore_blob, bluestore, 0)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Buffer, bluestore_buffer, bluestore)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Extent, bluestore_extent, bluestore)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Onode, bluestore_onode, bluestore)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Blob, bluestore_blob, bluestore)
 
 
 const string PREFIX_SUPER = "S";   // field -> value
