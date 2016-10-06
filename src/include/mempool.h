@@ -498,7 +498,7 @@ private:
    typedef pool_allocator<std::pair<key,value>> my_alloc_type;
    my_alloc_type * get_my_actual_allocator() {
       my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      alloc->selfCheck();
+      //alloc->selfCheck();
       return alloc;
    }
 };
@@ -536,7 +536,7 @@ private:
    typedef pool_allocator<std::pair<key,value>> my_alloc_type;
    my_alloc_type * get_my_actual_allocator() {
       my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      alloc->selfCheck();
+      //alloc->selfCheck();
       return alloc;
    }
 };
@@ -573,7 +573,7 @@ private:
    typedef pool_allocator<key> my_alloc_type;
    my_alloc_type * get_my_actual_allocator() {
       my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      alloc->selfCheck();
+      //alloc->selfCheck();
       return alloc;
    }
 };
@@ -610,7 +610,7 @@ private:
    typedef pool_allocator<key> my_alloc_type;
    my_alloc_type * get_my_actual_allocator() {
       my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      alloc->selfCheck();
+      //alloc->selfCheck();
       return alloc;
    }
 };
@@ -691,7 +691,7 @@ private:
    typedef pool_allocator<node> my_alloc_type;
    my_alloc_type * get_my_actual_allocator() {
       my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      alloc->selfCheck();
+      //alloc->selfCheck();
       return alloc;
    }
 };

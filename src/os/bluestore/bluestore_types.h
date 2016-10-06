@@ -22,6 +22,7 @@
 #include "include/utime.h"
 #include "include/small_encoding.h"
 #include "common/hobject.h"
+#include "include/mempool.h"
 
 namespace ceph {
   class Formatter;
@@ -163,7 +164,7 @@ struct bluestore_extent_ref_map_t {
   };
   WRITE_CLASS_ENCODER(record_t)
 
-  map<uint64_t,record_t> ref_map;
+  bluestore::map<uint64_t,record_t> ref_map;
 
   void _check() const;
   void _maybe_merge_left(map<uint64_t,record_t>::iterator& p);

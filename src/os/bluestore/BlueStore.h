@@ -208,7 +208,7 @@ public:
 	boost::intrusive::list_member_hook<>,
 	&Buffer::state_item> > state_list_t;
 
-    map<uint64_t,std::unique_ptr<Buffer>> buffer_map;
+    bluestore::map<uint64_t,std::unique_ptr<Buffer>> buffer_map;
     Cache *cache;
 
     // we use a bare intrusive list here instead of std::map because
@@ -363,6 +363,7 @@ public:
 
     std::mutex lock;   ///< protect lookup, insertion, removal
     int num_buckets;
+#warning we need bluestore::vector
     vector<bucket_type> buckets;
     boost::intrusive::unordered_set<SharedBlob> uset;
 
@@ -512,7 +513,7 @@ public:
     }
   };
   typedef boost::intrusive_ptr<Blob> BlobRef;
-  typedef std::map<int,BlobRef> blob_map_t;
+  typedef bluestore::map<int,BlobRef> blob_map_t;
 
   /// a logical extent, pointing to (some portion of) a blob
   struct Extent : public boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true>> {
