@@ -12,8 +12,8 @@
  *
  */
 
-#ifndef _MEMPOOL_H
-#define _MEMPOOL_H
+#ifndef _CEPH_INCLUDE_MEMPOOL_H
+#define _CEPH_INCLUDE_MEMPOOL_H
 #include <iostream>
 #include <fstream>
 
@@ -1115,21 +1115,26 @@ DEFINE_MEMORY_POOLS_HELPER(P)
 // Use this macro to create type-specific operator new and delete.
 // It should be part of the
 //
-#define MEMBER_OF_MEMPOOL() \
+#define MEMBER_OF_MEMPOOL()	    \
    void *operator new(size_t size); \
    void *operator new[](size_t size) { assert(0 == "No array new"); } \
    void  operator delete(void *); \
-   void  operator delete[](void *) { assert(0 == "no array delete"); } \
+   void  operator delete[](void *) { assert(0 == "no array delete"); }
 
 //
 // Use this macro in some particular .cc file to match the above macro
 // It creates the object factory and creates the relevant operator new and delete stuff
 //
 
-#define DEFINE_OBJECT_IN_MEMPOOL(obj,pool,stackSize) \
-static pool::factory<obj,stackSize> _factory##obj; \
-void * obj::operator new(size_t size) { assert(size == sizeof(obj)); return _factory##obj.allocate(); } \
-void   obj::operator delete(void *p)  { _factory##obj.free(p); }
+#define DEFINE_OBJECT_IN_MEMPOOL(obj,factoryname,pool,stackSize)	\
+  static pool::factory<obj,stackSize> _factory_##factoryname;		\
+  void * obj::operator new(size_t size) {				\
+    assert(size == sizeof(obj));					\
+    return _factory_##factoryname.allocate();				\
+  }									\
+  void obj::operator delete(void *p)  {					\
+    _factory_##factoryname.free(p);					\
+  }
 
 
-#endif // _slab_CONTAINERS_H
+#endif

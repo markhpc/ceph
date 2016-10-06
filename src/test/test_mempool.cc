@@ -247,7 +247,7 @@ struct obj {
   obj(int _a,int _b) : a(_a), b(_b) {}
 };
 
-DEFINE_OBJECT_IN_MEMPOOL(obj,unittest_2,1);
+DEFINE_OBJECT_IN_MEMPOOL(obj,obj,unittest_2,1);
 
 TEST(test_slab_containers, test_factory) {
    obj *o1 = new obj();
