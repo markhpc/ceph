@@ -208,7 +208,7 @@ public:
 	boost::intrusive::list_member_hook<>,
 	&Buffer::state_item> > state_list_t;
 
-    bluestore::map<uint64_t,std::unique_ptr<Buffer>> buffer_map;
+    bluestore_meta_other::map<uint64_t, std::unique_ptr<Buffer>> buffer_map;
     Cache *cache;
 
     // we use a bare intrusive list here instead of std::map because
@@ -514,7 +514,7 @@ public:
     }
   };
   typedef boost::intrusive_ptr<Blob> BlobRef;
-  typedef bluestore::map<int,BlobRef> blob_map_t;
+  typedef bluestore_meta_other::map<int,BlobRef> blob_map_t;
 
   /// a logical extent, pointing to (some portion of) a blob
   struct Extent : public boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true>> {
@@ -594,7 +594,7 @@ public:
       bool loaded = false;   ///< true if shard is loaded
       bool dirty = false;    ///< true if shard is dirty and needs reencoding
     };
-    bluestore::vector<Shard> shards;    ///< shards
+    bluestore_meta_other::vector<Shard> shards;    ///< shards
 
     bool inline_dirty = false;
     bufferlist inline_bl;    ///< cached encoded map, if unsharded; empty=>dirty

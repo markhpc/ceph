@@ -131,7 +131,8 @@ namespace mempool {
 #define DEFINE_MEMORY_POOLS_HELPER(f) \
   f(unittest_1)			      \
   f(unittest_2)			      \
-  f(bluestore)
+  f(bluestore_meta_onode)	      \
+  f(bluestore_meta_other)
 
 
 #define P(x) x,
@@ -430,8 +431,10 @@ public:
     size_t total = sizeof(T) * n;
     shard->bytes += total;
     shard->items += n;
-    bytes += total;
-    items += n;
+    if (pool->debug || force_debug) {
+      bytes += total;
+      items += n;
+    }
     pointer r = reinterpret_cast<pointer>(new char[total]);
     return r;
   }
@@ -440,8 +443,10 @@ public:
     size_t total = sizeof(T) * n;
     shard->bytes -= total;
     shard->items -= n;
-    bytes -= total;
-    items -= n;
+    if (pool->debug || force_debug) {
+      bytes -= total;
+      items -= n;
+    }
     delete[] reinterpret_cast<char*>(p);
   }
 
@@ -613,7 +618,7 @@ class factory {
   pool_allocator<o> alloc;
 public:
   factory()
-    : alloc(true) { // force debug
+    : alloc(false /*true*/) { // force debug
     alloc.AttachPool(pool_ix,typeid(*this).name());
   }
   void *allocate() {
@@ -631,7 +636,6 @@ public:
 };
 
 };
-
 
 // Namespace mempool
 
@@ -660,6 +664,8 @@ public:
 DEFINE_MEMORY_POOLS_HELPER(P)
 
 #undef P
+
+
 
 //
 // Helper macros for proper implementation of object factories.

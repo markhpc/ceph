@@ -33,11 +33,19 @@
 
 #define dout_subsys ceph_subsys_bluestore
 
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Buffer, bluestore_buffer, bluestore)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Extent, bluestore_extent, bluestore)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Onode, bluestore_onode, bluestore)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Blob, bluestore_blob, bluestore)
-DEFINE_OBJECT_IN_MEMPOOL(BlueStore::SharedBlob, bluestore_shared_blob, bluestore)
+// bluestore_meta_onode
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Onode, bluestore_onode,
+			 bluestore_meta_onode)
+
+// bluestore_meta_other
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Buffer, bluestore_buffer,
+			 bluestore_meta_other)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Extent, bluestore_extent,
+			 bluestore_meta_other)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Blob, bluestore_blob,
+			 bluestore_meta_other)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::SharedBlob, bluestore_shared_blob,
+			 bluestore_meta_other)
 
 
 const string PREFIX_SUPER = "S";   // field -> value
@@ -2436,7 +2444,7 @@ void BlueStore::Collection::trim_cache()
     dout(30) << __func__ << " no new mempool stats; nothing to do" << dendl;
     return;
   }
-  cache->last_cache_trim_seq = seq;
+  cache->last_trim_seq = seq;
 
   // trim
   if (total_onodes < 2) {
@@ -2459,8 +2467,9 @@ void *BlueStore::MempoolThread::entry()
 {
   Mutex::Locker l(lock);
   while (!stop) {
-    store->mempool_bytes = bluestore::allocated_bytes();
-    store->mempool_onodes = _factory_bluestore_onode.allocated_items();
+    store->mempool_bytes = bluestore_meta_other::allocated_bytes() +
+      bluestore_meta_onode::allocated_bytes();
+    store->mempool_onodes = bluestore_meta_onode::allocated_items();
     ++store->mempool_seq;
     utime_t wait;
     wait += g_conf->bluestore_cache_trim_interval;

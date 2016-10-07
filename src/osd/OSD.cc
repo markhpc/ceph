@@ -1924,11 +1924,16 @@ bool OSD::asok_command(string command, cmdmap_t& cmdmap, string format,
     f->close_section();
   } else if (command == "dump_mempools") {
     f->open_object_section("mempools");
-    f->dump_unsigned("total_bytes", bluestore::allocated_bytes());
-    f->dump_unsigned("total_items", bluestore::allocated_items());
-    mempool::DumpStatsByTypeID("bluestore", f, 100);
-    mempool::DumpStatsByBytes("bluestore", f, 100);
-    mempool::DumpStatsByItems("bluestore", f, 100);
+    f->open_object_section("bluestore_meta_onode");
+    f->dump_unsigned("total_bytes", bluestore_meta_onode::allocated_bytes());
+    f->dump_unsigned("total_items", bluestore_meta_onode::allocated_items());
+    mempool::DumpStatsByTypeID("bluestore_meta_onode", f, 100);
+    f->close_section();
+    f->open_object_section("bluestore_meta_other");
+    f->dump_unsigned("total_bytes", bluestore_meta_other::allocated_bytes());
+    f->dump_unsigned("total_items", bluestore_meta_other::allocated_items());
+    mempool::DumpStatsByTypeID("bluestore_meta_other", f, 100);
+    f->close_section();
     f->close_section();
   } else {
     assert(0 == "broken asok registration");

@@ -164,10 +164,11 @@ struct bluestore_extent_ref_map_t {
   };
   WRITE_CLASS_ENCODER(record_t)
 
-  bluestore::map<uint64_t,record_t> ref_map;
+  typedef bluestore_meta_other::map<uint64_t,record_t> map_t;
+  map_t ref_map;
 
   void _check() const;
-  void _maybe_merge_left(bluestore::map<uint64_t,record_t>::iterator& p);
+  void _maybe_merge_left(map_t::iterator& p);
 
   void clear() {
     ref_map.clear();
