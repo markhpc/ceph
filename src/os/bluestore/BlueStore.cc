@@ -2303,12 +2303,14 @@ BlueStore::Collection::Collection(BlueStore *ns, Cache *c, coll_t cid)
     lock("BlueStore::Collection::lock", true, false),
     exists(true),
     // size the shared blob hash table as a ratio of the onode cache size.
-    shared_blob_set(MAX(16,
+/*    shared_blob_set(MAX(16,
 			g_conf->bluestore_cache_size /
 			store->cache_shards.size() *
 			g_conf->bluestore_cache_meta_ratio /
-			sizeof(Onode) * 10 *   /* this is a wild guess :( */
+			sizeof(Onode) * 10 * 
 			g_conf->bluestore_shared_blob_hash_table_size_ratio)),
+*/
+    shared_blob_set(1024),
     onode_map(c)
 {
 }
