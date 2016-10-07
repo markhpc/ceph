@@ -245,6 +245,7 @@ public:
   // How much this pool consumes. O(<shard-size>)
   //
   size_t allocated_bytes() const;
+  size_t allocated_items() const;
   //
   // Aggregate stats by consumed.
   //
@@ -621,6 +622,12 @@ public:
   void  free(void *p) {
     alloc.deallocate((o *)p, 1);
   }
+  size_t allocated_items() {
+    return alloc.items;
+  }
+  size_t allocated_bytes() {
+    return alloc.bytes;
+  }
 };
 
 };
@@ -644,6 +651,9 @@ public:
     using factory = mempool::factory<mempool::x,v>;			\
     inline size_t allocated_bytes() {					\
       return mempool::GetPool(mempool::x).allocated_bytes();		\
+    }									\
+    inline size_t allocated_items() {					\
+      return mempool::GetPool(mempool::x).allocated_items();		\
     }									\
   };
 
