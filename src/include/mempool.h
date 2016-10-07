@@ -129,15 +129,15 @@ namespace mempool {
 // Adding to this #define creates a mempool of the same name
 //
 #define DEFINE_MEMORY_POOLS_HELPER(f) \
-   f(unittest_1) \
-   f(unittest_2) \
-   f(bluestore)
+  f(unittest_1)			      \
+  f(unittest_2)			      \
+  f(bluestore)
 
 
 #define P(x) x,
 enum pool_index_t {
-   DEFINE_MEMORY_POOLS_HELPER(P)
-   num_pools        // Must be last.
+  DEFINE_MEMORY_POOLS_HELPER(P)
+  num_pools        // Must be last.
 };
 #undef P
 
@@ -148,21 +148,21 @@ class pool_t;
 // Doubly linked list membership.
 //
 struct list_member_t {
-   list_member_t *next;
-   list_member_t *prev;
-   list_member_t() : next(this), prev(this) {}
-   ~list_member_t() { assert(next == this && prev == this); }
-   void insert(list_member_t *i) {
-      i->next = next;
-      i->prev = this;
-      next = i;
-   }
-   void remove() {
-      prev->next = next;
-      next->prev = prev;
-      next = this;
-      prev = this;
-   }
+  list_member_t *next;
+  list_member_t *prev;
+  list_member_t() : next(this), prev(this) {}
+  ~list_member_t() { assert(next == this && prev == this); }
+  void insert(list_member_t *i) {
+    i->next = next;
+    i->prev = this;
+    next = i;
+  }
+  void remove() {
+    prev->next = next;
+    next->prev = prev;
+    next = this;
+    prev = this;
+  }
 };
 
 struct shard_t {
@@ -176,56 +176,57 @@ struct shard_t {
 // Stats structures
 //
 struct StatsByBytes_t {
-   const char* typeID;
-  size_t items;
-   StatsByBytes_t() : typeID(nullptr), items(0) {}
-   void dump(ceph::Formatter *f) const;
+  const char* typeID = nullptr;
+  size_t items = 0;
+  void dump(ceph::Formatter *f) const;
 };
 struct StatsByItems_t {
-   const char *typeID;
-   size_t bytes;
-  StatsByItems_t() : typeID(nullptr), bytes(0) {}
-   void dump(ceph::Formatter *f) const;
+  const char *typeID = nullptr;
+  size_t bytes = 0;
+  void dump(ceph::Formatter *f) const;
 };
 struct StatsByTypeID_t {
-  size_t items;
-   size_t bytes;
-   StatsByTypeID_t() : items(0), bytes(0) {}
-   void dump(ceph::Formatter *f) const;
+  size_t items = 0;
+  size_t bytes = 0;
+  void dump(ceph::Formatter *f) const;
 };
 
-void FormatStatsByBytes(const std::multimap<size_t,StatsByBytes_t>&m, ceph::Formatter *f);
-void FormatStatsByItems(const std::multimap<size_t,StatsByItems_t>&m, ceph::Formatter *f);
-void FormatStatsByTypeID(const std::map<const char *,StatsByTypeID_t>&m, ceph::Formatter *f);
+void FormatStatsByBytes(const std::multimap<size_t,StatsByBytes_t>&m,
+			ceph::Formatter *f);
+void FormatStatsByItems(const std::multimap<size_t,StatsByItems_t>&m,
+			ceph::Formatter *f);
+void FormatStatsByTypeID(const std::map<const char *,StatsByTypeID_t>&m,
+			 ceph::Formatter *f);
 
-void DumpStatsByBytes(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
-void DumpStatsByItems(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
-void DumpStatsByTypeID(const std::string& prefix,ceph::Formatter *f,size_t trim = 50);
+void DumpStatsByBytes(const std::string& prefix, ceph::Formatter *f,
+		      size_t trim = 50);
+void DumpStatsByItems(const std::string& prefix, ceph::Formatter *f,
+		      size_t trim = 50);
+void DumpStatsByTypeID(const std::string& prefix, ceph::Formatter *f,
+		       size_t trim = 50);
 
-//
-// Root of all allocators, this enables the container information to operation easily
-//
-// These fields are "always" accurate ;-)
-//
+// Root of all allocators, this enables the container information to
+// operation easily These fields are "always" accurate ;-)
 struct pool_allocator_base_t {
-   list_member_t list_member;
-   pool_t *pool;
-   shard_t *shard;
-   const char *typeID;
-  std::atomic<size_t> items;
-  std::atomic<size_t> bytes;
-   pool_allocator_base_t() : pool(nullptr), shard(nullptr), typeID(nullptr), items(0), bytes(0) {}
-   //
-   // Helper functions for Stats
-   //
-   void UpdateStats(std::multimap<size_t,StatsByBytes_t>& byBytes) const;
-   void UpdateStats(std::multimap<size_t,StatsByItems_t>& bySlots) const;
-   void UpdateStats(std::map<const char *,StatsByTypeID_t>& byTypeID) const;
-   //
-   // Effective constructor
-   //
-   void AttachPool(pool_index_t index,const char *typeID);
-   ~pool_allocator_base_t();
+  list_member_t list_member;
+  pool_t *pool = nullptr;
+  shard_t *shard = nullptr;
+  const char *typeID = nullptr;
+  bool force_debug = false;
+  std::atomic<size_t> items = {0};
+  std::atomic<size_t> bytes = {0};
+
+  //
+  // Helper functions for Stats
+  //
+  void UpdateStats(std::multimap<size_t,StatsByBytes_t>& byBytes) const;
+  void UpdateStats(std::multimap<size_t,StatsByItems_t>& bySlots) const;
+  void UpdateStats(std::map<const char *,StatsByTypeID_t>& byTypeID) const;
+  //
+  // Effective constructor
+  //
+  void AttachPool(pool_index_t index, const char *typeID);
+  ~pool_allocator_base_t();
 };
 
 enum { shard_size = 64 }; // Sharding of headers
@@ -233,101 +234,115 @@ enum { shard_size = 64 }; // Sharding of headers
 pool_t& GetPool(pool_index_t ix);
 
 class pool_t {
-   static std::map<std::string,pool_t *> *pool_head;
-   static std::mutex pool_head_lock;
-   std::string name;
-   shard_t shard[shard_size];
-   friend class pool_allocator_base_t;
+  static std::map<std::string,pool_t *> *pool_head;
+  static std::mutex pool_head_lock;
+  std::string name;
+  shard_t shard[shard_size];
+  friend class pool_allocator_base_t;
 public:
-   bool debug;
-   //
-   // How much this pool consumes. O(<shard-size>)
-   //
-   size_t allocated_bytes() const;
-   //
-   // Aggregate stats by consumed.
-   //
-   static void StatsByBytes(const std::string& prefix,std::multimap<size_t,StatsByBytes_t>& bybytes,size_t trim);
-   static void StatsByItems(const std::string& prefix,std::multimap<size_t,StatsByItems_t>& bySlots,size_t trim);
-   static void StatsByTypeID(const std::string& prefix,std::map<const char *,StatsByTypeID_t>& byTypeID,size_t trim);
-   shard_t* pick_a_shard() {
-      size_t me = (size_t)pthread_self(); // Dirt cheap, see: http://fossies.org/dox/glibc-2.24/pthread__self_8c_source.html
-      size_t i = (me >> 3) % shard_size;
-      return &shard[i];
-   }
+  bool debug;
+  //
+  // How much this pool consumes. O(<shard-size>)
+  //
+  size_t allocated_bytes() const;
+  //
+  // Aggregate stats by consumed.
+  //
+  static void StatsByBytes(const std::string& prefix,
+			   std::multimap<size_t,StatsByBytes_t>& bybytes,
+			   size_t trim);
+   static void StatsByItems(const std::string& prefix,
+			    std::multimap<size_t,StatsByItems_t>& bySlots,
+			    size_t trim);
+   static void StatsByTypeID(const std::string& prefix,
+			     std::map<const char *,StatsByTypeID_t>& byTypeID,
+			     size_t trim);
+  shard_t* pick_a_shard() {
+    // Dirt cheap, see:
+    //   http://fossies.org/dox/glibc-2.24/pthread__self_8c_source.html
+    size_t me = (size_t)pthread_self();
+    size_t i = (me >> 3) % shard_size;
+    return &shard[i];
+  }
 public:
-   pool_t(const std::string& n, bool _debug) : name(n), debug(_debug) {
-      std::unique_lock<std::mutex> lock(pool_head_lock);
-      if (pool_head == nullptr) {
-         pool_head = new std::map<std::string,pool_t *>;
-      }
-      assert(pool_head->find(name) == pool_head->end());
-      (*pool_head)[name] = this;
-   }
-   virtual ~pool_t() {
-      std::unique_lock<std::mutex> lock(pool_head_lock);
-      assert(pool_head->find(name) != pool_head->end());
-      pool_head->erase(pool_head->find(name));
-      if (pool_head->size() == 0) {
-         delete pool_head;
-         pool_head = nullptr;
-      }
-   }
-   //
-   // Tracking of container ctor/dtor
-   //
-   void AttachAllocator(pool_allocator_base_t *base);
-   void DetachAllocator(pool_allocator_base_t *base);
+  pool_t(const std::string& n, bool _debug) : name(n), debug(_debug) {
+    std::unique_lock<std::mutex> lock(pool_head_lock);
+    if (pool_head == nullptr) {
+      pool_head = new std::map<std::string,pool_t *>;
+    }
+    assert(pool_head->find(name) == pool_head->end());
+    (*pool_head)[name] = this;
+  }
+  virtual ~pool_t() {
+    std::unique_lock<std::mutex> lock(pool_head_lock);
+    assert(pool_head->find(name) != pool_head->end());
+    pool_head->erase(pool_head->find(name));
+    if (pool_head->size() == 0) {
+      delete pool_head;
+      pool_head = nullptr;
+    }
+  }
+  //
+  // Tracking of container ctor/dtor
+  //
+  void AttachAllocator(pool_allocator_base_t *base);
+  void DetachAllocator(pool_allocator_base_t *base);
 private:
-   //
-   // Helpers for per-pool stats
-   //
-   template<typename maptype> void VisitPool(maptype& map,size_t trim) const {
-      for (size_t i = 0; i < shard_size; ++i) {
-         std::unique_lock<std::mutex> shard_lock(shard[i].lock);
-         for (const list_member_t *p = shard[i].containers.next;
-              p != &shard[i].containers;
-              p = p->next) {
-            const pool_allocator_base_t *c = reinterpret_cast<const pool_allocator_base_t *>(p);
-            c->UpdateStats(map);
-            while (map.size() > trim) {
-               map.erase(map.begin());
-            }
-         }
+  //
+  // Helpers for per-pool stats
+  //
+  template<typename maptype> void VisitPool(maptype& map,size_t trim) const {
+    for (size_t i = 0; i < shard_size; ++i) {
+      std::unique_lock<std::mutex> shard_lock(shard[i].lock);
+      for (const list_member_t *p = shard[i].containers.next;
+	   p != &shard[i].containers;
+	   p = p->next) {
+	const pool_allocator_base_t *c =
+	  reinterpret_cast<const pool_allocator_base_t *>(p);
+	c->UpdateStats(map);
+	while (map.size() > trim) {
+	  map.erase(map.begin());
+	}
       }
-   }
-   template<typename maptype> static void VisitAllPools(
-      const std::string& prefix,
-      maptype& map,
-      size_t trim) {
-      //
-      // Scan all of the pools for prefix match
-      //
-      for (size_t i = 0; i < num_pools; ++i) {
-        const pool_t &pool = mempool::GetPool((pool_index_t)i);
-        if (prefix == pool.name.substr(0,std::min(prefix.size(),pool.name.size()))) {
-           pool.VisitPool(map,trim);
-        }
+    }
+  }
+  template<typename maptype> static void VisitAllPools(
+    const std::string& prefix,
+    maptype& map,
+    size_t trim) {
+    //
+    // Scan all of the pools for prefix match
+    //
+    for (size_t i = 0; i < num_pools; ++i) {
+      const pool_t &pool = mempool::GetPool((pool_index_t)i);
+      if (prefix == pool.name.substr(0, std::min(prefix.size(),
+						 pool.name.size()))) {
+	pool.VisitPool(map,trim);
       }
-   }
+    }
+  }
 };
 
-inline void pool_allocator_base_t::AttachPool(pool_index_t index,const char *_typeID) {
-   assert(pool == nullptr);
-   pool = &GetPool(index);
-   shard = pool->pick_a_shard();
-   typeID = _typeID;
-   if (pool->debug) {
-      std::unique_lock<std::mutex> lock(shard->lock);
-      shard->containers.insert(&list_member);
-   }
+inline void pool_allocator_base_t::AttachPool(
+  pool_index_t index,
+  const char *_typeID)
+{
+  assert(pool == nullptr);
+  pool = &GetPool(index);
+  shard = pool->pick_a_shard();
+  typeID = _typeID;
+  if (pool->debug || force_debug) {
+    std::unique_lock<std::mutex> lock(shard->lock);
+    shard->containers.insert(&list_member);
+  }
 }
 
-inline pool_allocator_base_t::~pool_allocator_base_t() {
-   if (pool && pool->debug) {
-      std::unique_lock<std::mutex> lock(shard->lock);
-      list_member.remove();
-   }
+inline pool_allocator_base_t::~pool_allocator_base_t()
+{
+  if ((pool && pool->debug) || force_debug) {
+    std::unique_lock<std::mutex> lock(shard->lock);
+    list_member.remove();
+  }
 }
 
 //
@@ -386,363 +401,251 @@ inline pool_allocator_base_t::~pool_allocator_base_t() {
 
 template<typename T>
 class pool_allocator : public pool_allocator_base_t {
+  pool_allocator *selfPointer;   ///< for selfCheck
+
 public:
-   typedef pool_allocator<T> allocator_type;
-   typedef T value_type;
-   typedef value_type *pointer;
-   typedef const value_type * const_pointer;
-   typedef value_type& reference;
-   typedef const value_type& const_reference;
-   typedef std::size_t size_type;
-   typedef std::ptrdiff_t difference_type;
+  typedef pool_allocator<T> allocator_type;
+  typedef T value_type;
+  typedef value_type *pointer;
+  typedef const value_type * const_pointer;
+  typedef value_type& reference;
+  typedef const value_type& const_reference;
+  typedef std::size_t size_type;
+  typedef std::ptrdiff_t difference_type;
 
-   template<typename U> struct rebind { typedef pool_allocator<U> other; };
+  template<typename U> struct rebind {
+    typedef pool_allocator<U> other;
+  };
 
-  pool_allocator() {
-      typeID = typeid(*this).name();
-   }
-   ~pool_allocator() {
-      //
-      // If you fail here, it's because you've allowed a node to escape the enclosing object. Something like a swap
-      // or a splice operation. Probably the slab_xxx container is missing a "using" that serves to hide some operation.
-      //
-     //assert(freeSlotCount == stackSize);
-     //assert(freeSlabHeads.next == &stackSlab.slabHead); // Empty list should have stack slab on it
-   }
+  pool_allocator(bool _force_debug=false) {
+    force_debug = _force_debug;
+    typeID = typeid(*this).name();
+    selfPointer = this;
+  }
+  ~pool_allocator() {
+  }
 
-   pointer allocate(size_t cnt,void *p = nullptr) {
-      assert(cnt == 1); // if you fail this you've used this class with the wrong STL container.
-      //assert(sizeof(slot_t) == trueSlotSize);
-      shard->bytes += sizeof(T);
-      ++shard->items;
-      if (pool->debug) {
-	bytes += sizeof(T);
-	++items;
-      }
-      return reinterpret_cast<pointer>(new char[sizeof(T)]);
-   }
+  pointer allocate(size_t n, void *p = nullptr) {
+    size_t total = sizeof(T) * n;
+    shard->bytes += total;
+    shard->items += n;
+    bytes += total;
+    items += n;
+    pointer r = reinterpret_cast<pointer>(new char[total]);
+    return r;
+  }
 
-   void deallocate(pointer p, size_type s) {
-     shard->bytes -= sizeof(T);
-     --shard->items;
-      if (pool->debug) {
-	bytes -= sizeof(T);
-	--items;
-      }
-     delete[] reinterpret_cast<char*>(p);
-   }
+  void deallocate(pointer p, size_type n) {
+    size_t total = sizeof(T) * n;
+    shard->bytes -= total;
+    shard->items -= n;
+    bytes -= total;
+    items -= n;
+    delete[] reinterpret_cast<char*>(p);
+  }
 
-   void destroy(pointer p) {
-      p->~T();
-   }
+  void destroy(pointer p) {
+    p->~T();
+  }
 
-   template<class U> void destroy(U *p) {
-      p->~U();
-   }
+  template<class U>
+  void destroy(U *p) {
+    p->~U();
+  }
 
-   void construct(pointer p,const_reference val) {
-      ::new ((void *)p) T(val);
-   }
+  void construct(pointer p, const_reference val) {
+    ::new ((void *)p) T(val);
+  }
 
-   template<class U, class... Args> void construct(U* p,Args&&... args) {
-      ::new((void *)p) U(std::forward<Args>(args)...);
-   }
+  template<class U, class... Args> void construct(U* p,Args&&... args) {
+    ::new((void *)p) U(std::forward<Args>(args)...);
+  }
 
-   bool operator==(const pool_allocator&) { return true; }
-   bool operator!=(const pool_allocator&) { return false; }
+  bool operator==(const pool_allocator&) { return true; }
+  bool operator!=(const pool_allocator&) { return false; }
+
+  void selfCheck() const {
+    // If you fail here, the horrible get_my_allocator hack is failing.
+    assert(this == selfPointer);
+  }
 
 private:
-
-   // Can't copy or assign this guy
-   pool_allocator(pool_allocator&) = delete;
-   pool_allocator(pool_allocator&&) = delete;
-   void operator=(const pool_allocator&) = delete;
-   void operator=(const pool_allocator&&) = delete;
+  // Can't copy or assign this guy
+  pool_allocator(pool_allocator&) = delete;
+  pool_allocator(pool_allocator&&) = delete;
+  void operator=(const pool_allocator&) = delete;
+  void operator=(const pool_allocator&&) = delete;
 };
 
 //
 // Extended containers
 //
-template<
-   pool_index_t pool_ix,
-   typename key,
-   typename value,
-   typename compare = std::less<key> >
-   struct map :
-      public std::map<key,value,compare,pool_allocator<std::pair<key,value>> > {
-   map() {
-      get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
-   }
-   //
-   // Extended operator. reserve is now meaningful.
-   //
-   void reserve(size_t freeCount) { this->get_my_actual_allocator()->reserve(freeCount); }
-private:
-   typedef std::map<key,value,compare,pool_allocator<std::pair<key,value>>> map_type;
-   //
-   // Disallowed operations
-   //
-   using map_type::swap;
 
-   //
-   // Unfortunately, the get_allocator operation returns a COPY of the allocator, not a reference :( :( :( :(
-   // We need the actual underlying object. This terrible hack accomplishes that because the STL library on
-   // all of the platforms we care about actually instantiate the allocator right at the start of the object :)
-   // we do have a check for this :)
-   //
-   // It's also the case that the instantiation type of the underlying allocator won't match the type of the allocator
-   // That's here (that's because the container instantiates the node type itself, i.e., with container-specific
-   // additional members.
-   // But that doesn't matter for this hack...
-   //
-   typedef pool_allocator<std::pair<key,value>> my_alloc_type;
-   my_alloc_type * get_my_actual_allocator() {
-      my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      //alloc->selfCheck();
-      return alloc;
-   }
+// std::map  
+template<
+  pool_index_t pool_ix,
+  typename key,
+  typename value,
+  typename compare = std::less<key> >
+struct map :
+    public std::map<key,value,compare,pool_allocator<std::pair<key,value>> > {
+  map() {
+    get_my_actual_allocator()->AttachPool(pool_ix, typeid(*this).name());
+  }
+
+  typedef pool_allocator<std::pair<key,value>> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
 };
 
+// std::multimap
 template<
-   pool_index_t pool_ix,
-   typename key,
-   typename value,
-   typename compare = std::less<key> >
-   struct multimap : public std::multimap<key,value,compare,pool_allocator<std::pair<key,value>> > {
-   multimap() {
-      get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
-   }
-   //
-   // Extended operator. reserve is now meaningful.
-   //
-   void reserve(size_t freeCount) { this->get_my_actual_allocator()->reserve(freeCount); }
-private:
-   typedef std::multimap<key,value,compare,pool_allocator<std::pair<key,value>>> map_type;
-   //
-   // Disallowed operations
-   //
-   using map_type::swap;
-   //
-   // Unfortunately, the get_allocator operation returns a COPY of the allocator, not a reference :( :( :( :(
-   // We need the actual underlying object. This terrible hack accomplishes that because the STL library on
-   // all of the platforms we care about actually instantiate the allocator right at the start of the object :)
-   // we do have a check for this :)
-   //
-   // It's also the case that the instantiation type of the underlying allocator won't match the type of the allocator
-   // That's here (that's because the container instantiates the node type itself, i.e., with container-specific
-   // additional members.
-   // But that doesn't matter for this hack...
-   //
-   typedef pool_allocator<std::pair<key,value>> my_alloc_type;
-   my_alloc_type * get_my_actual_allocator() {
-      my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      //alloc->selfCheck();
-      return alloc;
-   }
+  pool_index_t pool_ix,
+  typename key,
+  typename value,
+  typename compare = std::less<key> >
+struct multimap : public std::multimap<key,value,compare,
+				       pool_allocator<std::pair<key,value>> > {
+  multimap() {
+    get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
+  }
+
+  typedef pool_allocator<std::pair<key,value>> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
 };
 
+// std::set
 template<
-   pool_index_t pool_ix,
-   typename key,
-   typename compare = std::less<key> >
-   struct set : public std::set<key,compare,pool_allocator<key> > {
-   set() {
-      get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
-   }
-   //
-   // Extended operator. reserve is now meaningful.
-   //
-   void reserve(size_t freeCount) { this->get_my_actual_allocator()->reserve(freeCount); }
-private:
-   typedef std::set<key,compare,pool_allocator<key>> set_type;
-   //
-   // Disallowed operations
-   //
-   using set_type::swap;
-   //
-   // Unfortunately, the get_allocator operation returns a COPY of the allocator, not a reference :( :( :( :(
-   // We need the actual underlying object. This terrible hack accomplishes that because the STL library on
-   // all of the platforms we care about actually instantiate the allocator right at the start of the object :)
-   // we do have a check for this :)
-   //
-   // It's also the case that the instantiation type of the underlying allocator won't match the type of the allocator
-   // That's here (that's because the container instantiates the node type itself, i.e., with container-specific
-   // additional members.
-   // But that doesn't matter for this hack...
-   //
-   typedef pool_allocator<key> my_alloc_type;
-   my_alloc_type * get_my_actual_allocator() {
-      my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      //alloc->selfCheck();
-      return alloc;
-   }
+  pool_index_t pool_ix,
+  typename key,
+  typename compare = std::less<key> >
+struct set : public std::set<key,compare,pool_allocator<key> > {
+  set() {
+    get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
+  }
+
+  typedef pool_allocator<key> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
 };
 
+// std::multiset
 template<
-   pool_index_t pool_ix,
-   typename key,
-   typename compare = std::less<key> >
-   struct multiset : public std::multiset<key,compare,pool_allocator<key> > {
-   multiset() {
-      get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
-   }
-   //
-   // Extended operator. reserve is now meaningful.
-   //
-   void reserve(size_t freeCount) { this->get_my_actual_allocator()->reserve(freeCount); }
-private:
-   typedef std::multiset<key,compare,pool_allocator<key>> set_type;
-   //
-   // Disallowed operations
-   //
-   using set_type::swap;
-   //
-   // Unfortunately, the get_allocator operation returns a COPY of the allocator, not a reference :( :( :( :(
-   // We need the actual underlying object. This terrible hack accomplishes that because the STL library on
-   // all of the platforms we care about actually instantiate the allocator right at the start of the object :)
-   // we do have a check for this :)
-   //
-   // It's also the case that the instantiation type of the underlying allocator won't match the type of the allocator
-   // That's here (that's because the container instantiates the node type itself, i.e., with container-specific
-   // additional members.
-   // But that doesn't matter for this hack...
-   //
-   typedef pool_allocator<key> my_alloc_type;
-   my_alloc_type * get_my_actual_allocator() {
-      my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      //alloc->selfCheck();
-      return alloc;
-   }
+  pool_index_t pool_ix,
+  typename key,
+  typename compare = std::less<key> >
+struct multiset : public std::multiset<key,compare,pool_allocator<key> > {
+  multiset() {
+    get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
+  }
+
+  typedef pool_allocator<key> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
 };
 
+// std::list
 template<
   pool_index_t pool_ix,
   typename node>
-   struct list : public std::list<node,pool_allocator<node> > {
+struct list : public std::list<node,pool_allocator<node> > {
+  list() {
+    get_my_actual_allocator()->AttachPool(pool_ix, typeid(*this).name());
+  }
+  list(const list& o) {
+    get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name());
+    copy(o);
+  };
+  list& operator=(const list& o) {
+    copy(o);
+    return *this;
+  }
 
-   //
-   // copy and assignment
-   //
-   list() { get_my_actual_allocator()->AttachPool(pool_ix, typeid(*this).name()); }
-   list(const list& o) {  get_my_actual_allocator()->AttachPool(pool_ix,typeid(*this).name()); copy(o); }; // copy
-   list& operator=(const list& o) { copy(o); return *this; }
-
-   typedef typename std::list<node,pool_allocator<node>>::iterator it;
-   //
-   // We support splice, but it requires actually copying each node, so it's O(N) not O(1)
-   //
-   void splice(it pos, list& other)        { this->splice(pos, other, other.begin(), other.end()); }
-   void splice(it pos, list& other, it it) { this->splice(pos, other, it, it == other.end() ? it : std::next(it)); }
-   void splice(it pos, list& other, it first, it last) {
-      while (first != last) {
-         pos = std::next(this->insert(pos,*first)); // points after insertion of this element
-         first = other.erase(first);
-      }
-   }
-   //
-   // Swap is supported, but it's O(2N)
-   //
-   void swap(list& o) {
-      it ofirst = o.begin();
-      it olast  = o.end();
-      it mfirst = this->begin();
-      it mlast  = this->end();
-      //
-      // copy and erase Slots from other to end of my list
-      //
-      while (ofirst != olast) {
-         this->push_back(std::move(*ofirst));
-         ofirst = o.erase(ofirst);
-      }
-      //
-      // Copy original Slots of my list to other container
-      //
-      while (mfirst != mlast) {
-         o.push_back(std::move(*mfirst));
-         mfirst = this->erase(mfirst);
-      }
-   }
-   //
-   // Extended operator. reserve is now meaningful.
-   //
-   void reserve(size_t freeCount) { this->get_my_actual_allocator()->reserve(freeCount); }
-private:
-   typedef std::list<node,pool_allocator<node>> list_type;
-
-   void copy(const list& o) {
-      this->clear();
-      for (auto& e : o) {
-         this->push_back(e);
-      }
-   }
-   //
-   // Disallowed operations
-   //
-   // Unfortunately, the get_allocator operation returns a COPY of the allocator, not a reference :( :( :( :(
-   // We need the actual underlying object. This terrible hack accomplishes that because the STL library on
-   // all of the platforms we care about actually instantiate the allocator right at the start of the object :)
-   // we do have a cheap run-time check for this, in case you're platform doesn't match the same layout :)
-   //
-   // It's also the case that the instantiation type of the underlying allocator won't match the type of the allocator
-   // That's here (that's because the container instantiates the node type itself, i.e., with container-specific
-   // additional members.
-   // But that doesn't matter for this hack...
-   //
-   typedef pool_allocator<node> my_alloc_type;
-   my_alloc_type * get_my_actual_allocator() {
-      my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
-      //alloc->selfCheck();
-      return alloc;
-   }
+  typedef pool_allocator<node> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
 };
 
-//
-// Finally, a way to allocate non-container objects :)
-//
-// This only support standalone objects, not arrays. Arrays could be added if they're needed
-//
+// std::vector
+template<
+  pool_index_t pool_ix,
+  typename node>
+struct vector : public std::vector<node,pool_allocator<node> > {
+  vector() {
+    get_my_actual_allocator()->AttachPool(pool_ix, typeid(*this).name());
+  }
+  vector(size_t s) {
+    get_my_actual_allocator()->AttachPool(pool_ix, typeid(*this).name());
+    this->reserve(s);
+  }
+
+  typedef pool_allocator<node> my_alloc_type;
+  my_alloc_type * get_my_actual_allocator() {
+    my_alloc_type *alloc = reinterpret_cast<my_alloc_type *>(this);
+    alloc->selfCheck();
+    return alloc;
+  }
+};
+
+  
+// Finally, a way to allocate non-container objects :) This only
+// supports standalone objects, not arrays. Arrays could be added if
+// they're needed.
 template<pool_index_t pool_ix,typename o>
 class factory {
-   pool_allocator<o> alloc;
+  pool_allocator<o> alloc;
 public:
-   factory() {
-      alloc.AttachPool(pool_ix,typeid(*this).name());
-   }
-   void *allocate() { return (void *)alloc.allocate(1); }
-   void  free(void *p) { alloc.deallocate((o *)p,0); }
+  factory()
+    : alloc(true) { // force debug
+    alloc.AttachPool(pool_ix,typeid(*this).name());
+  }
+  void *allocate() {
+    return (void *)alloc.allocate(1);
+  }
+  void  free(void *p) {
+    alloc.deallocate((o *)p, 1);
+  }
 };
 
-}; // Namespace mempool
-
-//
-// Simple function to compute the size of a heapSlab, in the absence of a default.
-//
-
-enum { _desired_slab_size = 256 }; // approximate preferred allocation size
-
-inline constexpr size_t defaultSlabHeapCount(size_t Slotsize,size_t overheads) {
-   return (_desired_slab_size / (Slotsize + (overheads * sizeof(void *)))) ?
-          (_desired_slab_size / (Slotsize + (overheads * sizeof(void *)))) :
-          size_t(1); // can't uses std::max, it's not constexpr
-}
-
-
-#define P(x) \
-namespace x { \
-  template<typename k,typename v, typename cmp = std::less<k> > \
-      using map = mempool::map<mempool::x,k,v,cmp>; \
-  template<typename k,typename v, typename cmp = std::less<k> > \
-      using multimap = mempool::multimap<mempool::x,k,v,cmp>; \
-  template<typename k, typename cmp = std::less<k> > \
-      using set = mempool::set<mempool::x,k,cmp>; \
-  template<typename v> \
-      using list = mempool::list<mempool::x,v>; \
-  template<typename v> \
-      using factory = mempool::factory<mempool::x,v>; \
-  inline size_t allocated_bytes() { \
-      return mempool::GetPool(mempool::x).allocated_bytes(); \
-  } \
 };
+
+
+// Namespace mempool
+
+#define P(x)								\
+  namespace x {								\
+    template<typename k,typename v, typename cmp = std::less<k> >	\
+    using map = mempool::map<mempool::x,k,v,cmp>;			\
+    template<typename k,typename v, typename cmp = std::less<k> >	\
+    using multimap = mempool::multimap<mempool::x,k,v,cmp>;		\
+    template<typename k, typename cmp = std::less<k> >			\
+    using set = mempool::set<mempool::x,k,cmp>;				\
+    template<typename v>						\
+    using list = mempool::list<mempool::x,v>;				\
+    template<typename v>						\
+    using vector = mempool::vector<mempool::x,v>;			\
+    template<typename v>						\
+    using factory = mempool::factory<mempool::x,v>;			\
+    inline size_t allocated_bytes() {					\
+      return mempool::GetPool(mempool::x).allocated_bytes();		\
+    }									\
+  };
 
 DEFINE_MEMORY_POOLS_HELPER(P)
 
@@ -760,10 +663,9 @@ DEFINE_MEMORY_POOLS_HELPER(P)
    void  operator delete(void *); \
    void  operator delete[](void *) { assert(0 == "no array delete"); }
 
-//
 // Use this macro in some particular .cc file to match the above macro
-// It creates the object factory and creates the relevant operator new and delete stuff
-//
+// It creates the object factory and creates the relevant operator new
+// and delete stuff
 
 #define DEFINE_OBJECT_IN_MEMPOOL(obj,factoryname,pool)			\
   static pool::factory<obj> _factory_##factoryname;			\
