@@ -320,6 +320,8 @@ public:
 
   /// in-memory shared blob state (incl cached buffers)
   struct SharedBlob : public boost::intrusive::unordered_set_base_hook<> {
+    MEMBER_OF_MEMPOOL();
+
     std::atomic_int nref = {0}; ///< reference count
 
     // these are defined/set if the shared_blob is 'loaded'
@@ -363,7 +365,6 @@ public:
 
     std::mutex lock;   ///< protect lookup, insertion, removal
     int num_buckets;
-#warning we need bluestore::vector
     vector<bucket_type> buckets;
     boost::intrusive::unordered_set<SharedBlob> uset;
 
@@ -593,7 +594,7 @@ public:
       bool loaded = false;   ///< true if shard is loaded
       bool dirty = false;    ///< true if shard is dirty and needs reencoding
     };
-    vector<Shard> shards;    ///< shards
+    bluestore::vector<Shard> shards;    ///< shards
 
     bool inline_dirty = false;
     bufferlist inline_bl;    ///< cached encoded map, if unsharded; empty=>dirty

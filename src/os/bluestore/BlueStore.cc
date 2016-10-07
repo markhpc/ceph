@@ -37,6 +37,7 @@ DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Buffer, bluestore_buffer, bluestore)
 DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Extent, bluestore_extent, bluestore)
 DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Onode, bluestore_onode, bluestore)
 DEFINE_OBJECT_IN_MEMPOOL(BlueStore::Blob, bluestore_blob, bluestore)
+DEFINE_OBJECT_IN_MEMPOOL(BlueStore::SharedBlob, bluestore_shared_blob, bluestore)
 
 
 const string PREFIX_SUPER = "S";   // field -> value
