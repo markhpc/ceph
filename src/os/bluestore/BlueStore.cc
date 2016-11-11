@@ -3276,6 +3276,16 @@ int BlueStore::_open_db(bool create)
   stringstream err;
   ceph::shared_ptr<Int64ArrayMergeOperator> merge_op(new Int64ArrayMergeOperator);
 
+  std::vector<KeyValueDB::ColumnFamily> cfs;
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SUPER, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_STAT, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_COLL, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OBJ, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OMAP, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_WAL, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, ""));
+
   string kv_backend;
   if (create) {
     kv_backend = g_conf->bluestore_kvbackend;
@@ -3506,16 +3516,6 @@ int BlueStore::_open_db(bool create)
   if (kv_backend == "rocksdb")
     options = g_conf->bluestore_rocksdb_options;
   db->init(options);
-
-  std::vector<KeyValueDB::ColumnFamily> cfs;
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SUPER, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_STAT, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_COLL, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OBJ, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OMAP, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_WAL, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, ""));
 
   if (create)
     r = db->create_and_open(err, cfs);
