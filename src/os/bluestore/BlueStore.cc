@@ -3506,10 +3506,21 @@ int BlueStore::_open_db(bool create)
   if (kv_backend == "rocksdb")
     options = g_conf->bluestore_rocksdb_options;
   db->init(options);
+
+  std::vector<KeyValueDB::ColumnFamily> cfs;
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SUPER, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_STAT, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_COLL, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OBJ, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OMAP, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_WAL, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""));
+  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, ""));
+
   if (create)
-    r = db->create_and_open(err);
+    r = db->create_and_open(err, cfs);
   else
-    r = db->open(err);
+    r = db->open(err, cfs);
   if (r) {
     derr << __func__ << " erroring opening db: " << err.str() << dendl;
     if (bluefs) {
