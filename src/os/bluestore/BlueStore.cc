@@ -58,7 +58,7 @@ const string PREFIX_WAL = "L";     // id -> wal_transaction_t
 const string PREFIX_ALLOC = "B";   // u64 offset -> u64 length (freelist)
 const string PREFIX_SHARED_BLOB = "X"; // u64 offset -> shared_blob_t
 
-const std::vector<KeyValueDB::ColumnFamily> cfs(
+const std::vector<KeyValueDB::ColumnFamily> cfs = {
   KeyValueDB::ColumnFamily(PREFIX_SUPER, ""),
   KeyValueDB::ColumnFamily(PREFIX_STAT, ""),
   KeyValueDB::ColumnFamily(PREFIX_COLL, ""),
@@ -67,7 +67,7 @@ const std::vector<KeyValueDB::ColumnFamily> cfs(
   KeyValueDB::ColumnFamily(PREFIX_WAL, ""),
   KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""),
   KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, "")
-);
+};
 
 
 // write a label in the first block.  always use this size.  note that
