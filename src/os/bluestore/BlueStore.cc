@@ -58,6 +58,18 @@ const string PREFIX_WAL = "L";     // id -> wal_transaction_t
 const string PREFIX_ALLOC = "B";   // u64 offset -> u64 length (freelist)
 const string PREFIX_SHARED_BLOB = "X"; // u64 offset -> shared_blob_t
 
+const std::vector<KeyValueDB::ColumnFamily> cfs(
+  KeyValueDB::ColumnFamily(PREFIX_SUPER, ""),
+  KeyValueDB::ColumnFamily(PREFIX_STAT, ""),
+  KeyValueDB::ColumnFamily(PREFIX_COLL, ""),
+  KeyValueDB::ColumnFamily(PREFIX_OBJ, ""),
+  KeyValueDB::ColumnFamily(PREFIX_OMAP, ""),
+  KeyValueDB::ColumnFamily(PREFIX_WAL, ""),
+  KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""),
+  KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, "")
+);
+
+
 // write a label in the first block.  always use this size.  note that
 // bluefs makes a matching assumption about the location of its
 // superblock (always the second block of the device).
@@ -3275,16 +3287,6 @@ int BlueStore::_open_db(bool create)
   string options;
   stringstream err;
   ceph::shared_ptr<Int64ArrayMergeOperator> merge_op(new Int64ArrayMergeOperator);
-
-  std::vector<KeyValueDB::ColumnFamily> cfs;
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SUPER, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_STAT, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_COLL, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OBJ, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_OMAP, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_WAL, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_ALLOC, ""));
-  cfs.push_back(KeyValueDB::ColumnFamily(PREFIX_SHARED_BLOB, ""));
 
   string kv_backend;
   if (create) {
