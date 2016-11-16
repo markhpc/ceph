@@ -6406,6 +6406,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       if (txc->ioc.has_pending_aios()) {
 	txc->state = TransContext::STATE_AIO_WAIT;
 	txc->had_ios = true;
+	txc->in_queue_context = false;
 	_txc_aio_submit(txc);
 	return;
       }
@@ -6456,6 +6457,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	  assert(r == 0);
 	}
       }
+      txc->in_queue_context = false;
       {
 	std::lock_guard<std::mutex> l(kv_lock);
 	kv_queue.push_back(txc);
@@ -6476,6 +6478,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->log_state_latency(logger, l_bluestore_state_kv_done_lat);
       if (txc->wal_txn) {
 	txc->state = TransContext::STATE_WAL_QUEUED;
+	txc->in_queue_context = false;
 	if (sync_wal_apply) {
 	  _wal_apply(txc);
 	} else {
@@ -6490,6 +6493,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       txc->log_state_latency(logger, l_bluestore_state_wal_applying_lat);
       if (txc->ioc.has_pending_aios()) {
 	txc->state = TransContext::STATE_WAL_AIO_WAIT;
+	txc->in_queue_context = false;
 	_txc_aio_submit(txc);
 	return;
       }
@@ -6497,6 +6501,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 
     case TransContext::STATE_WAL_AIO_WAIT:
       txc->log_state_latency(logger, l_bluestore_state_wal_aio_wait_lat);
+      txc->in_queue_context = false;
       _wal_finish(txc);
       return;
 
@@ -6538,6 +6543,7 @@ void BlueStore::_txc_finish_io(TransContext *txc)
     if (p->state < TransContext::STATE_IO_DONE) {
       dout(20) << __func__ << " " << txc << " blocked by " << &*p << " "
 	       << p->get_state_name() << dendl;
+      txc->in_queue_context = false;
       return;
     }
     if (p->state > TransContext::STATE_IO_DONE) {
@@ -6888,6 +6894,7 @@ void BlueStore::_kv_sync_thread()
 	txc->state = TransContext::STATE_KV_SUBMITTED;
       }
       for (auto txc : kv_committing) {
+	assert(!txc->in_queue_context);
 	if (txc->had_ios) {
 	  --txc->osr->txc_with_unstable_io;
 	}
@@ -6949,6 +6956,7 @@ void BlueStore::_kv_sync_thread()
       }
       while (!wal_cleaning.empty()) {
 	TransContext *txc = wal_cleaning.front();
+	assert(!txc->in_queue_context);
 	_txc_release_alloc(txc);
 	_txc_state_proc(txc);
 	wal_cleaning.pop_front();
@@ -7025,6 +7033,7 @@ int BlueStore::_wal_finish(TransContext *txc)
   txc->wal_txn->released.swap(txc->released);
   assert(txc->wal_txn->released.empty());
 
+  assert(!txc->in_queue_context);
   std::lock_guard<std::mutex> l2(txc->osr->qlock);
   std::lock_guard<std::mutex> l(kv_lock);
   txc->state = TransContext::STATE_WAL_CLEANUP;
