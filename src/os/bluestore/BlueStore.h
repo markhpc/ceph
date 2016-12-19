@@ -877,6 +877,42 @@ public:
 #endif
   };
 
+  /// NOOPCache
+  struct NOOPCache : public Cache {
+  public:
+    uint64_t _get_num_onodes() override {
+      return 0;
+    }
+    void _add_onode(OnodeRef& o, int level) override {
+      o->put();
+    }
+    void _rm_onode(OnodeRef& o) override {
+    }
+    void _touch_onode(OnodeRef& o) override {
+    }
+
+    uint64_t _get_buffer_bytes() override {
+      return 0;
+    }
+    void _add_buffer(Buffer *b, int level, Buffer *near) override {
+    }
+    void _rm_buffer(Buffer *b) override {
+    }
+    void _adjust_buffer_size(Buffer *b, int64_t delta) override {
+    }
+    void _touch_buffer(Buffer *b) override {
+    }
+
+    void _trim(uint64_t onode_max, uint64_t buffer_max) override {
+    }
+
+    void add_stats(uint64_t *onodes, uint64_t *extents,
+                   uint64_t *blobs,
+                   uint64_t *buffers,
+                   uint64_t *bytes) override {
+    }
+
+
   /// simple LRU cache for onodes and buffers
   struct LRUCache : public Cache {
   private:

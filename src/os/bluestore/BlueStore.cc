@@ -513,6 +513,8 @@ BlueStore::Cache *BlueStore::Cache::create(string type, PerfCounters *logger)
     c = new LRUCache;
   else if (type == "2q")
     c = new TwoQCache;
+  else if (type == "noop")
+    c = new NOOPCache;
   else
     assert(0 == "unrecognized cache type");
 
