@@ -912,6 +912,10 @@ public:
                    uint64_t *bytes) override {
     }
 
+#ifdef DEBUG_CACHE
+    void _audit(const char *s) override;
+#endif
+  };
 
   /// simple LRU cache for onodes and buffers
   struct LRUCache : public Cache {
