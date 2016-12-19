@@ -11,6 +11,9 @@
 // high bit of every byte indicates whether another byte follows.
 template<typename T>
 inline void small_encode_varint(T v, bufferlist& bl) {
+  ::encode(v, bl);
+}
+/*inline void small_encode_varint(T v, bufferlist& bl) {
   uint8_t byte = v & 0x7f;
   v >>= 7;
   while (v) {
@@ -21,9 +24,13 @@ inline void small_encode_varint(T v, bufferlist& bl) {
   }
   ::encode(byte, bl);
 }
-
+*/
 template<typename T>
-inline void small_decode_varint(T& v, bufferlist::iterator& p)
+inline void small_decode_varint(T& v, bufferlist::iterator& p) {
+  ::decode(v, p);
+}
+
+/*inline void small_decode_varint(T& v, bufferlist::iterator& p)
 {
   uint8_t byte;
   ::decode(byte, p);
@@ -35,6 +42,7 @@ inline void small_decode_varint(T& v, bufferlist::iterator& p)
     shift += 7;
   }
 }
+*/
 
 // signed varint encoding
 //
