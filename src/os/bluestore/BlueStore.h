@@ -877,8 +877,18 @@ public:
 #endif
   };
 
-  /// NOOPCache
+  /// NOOPCache - NOOP Onode, LRU Buffer
   struct NOOPCache : public Cache {
+  private:
+    typedef boost::intrusive::list<
+      Buffer,
+      boost::intrusive::member_hook<
+        Buffer,
+        boost::intrusive::list_member_hook<>,
+        &Buffer::lru_item> > buffer_lru_list_t;
+    buffer_lru_list_t buffer_lru;
+    uint64_t buffer_size = 0;
+
   public:
     uint64_t _get_num_onodes() override {
       return 0;
@@ -894,22 +904,51 @@ public:
     uint64_t _get_buffer_bytes() override {
       return 0;
     }
+
+    uint64_t _get_buffer_bytes() override {
+      return buffer_size;
+    }
     void _add_buffer(Buffer *b, int level, Buffer *near) override {
+      if (near) {
+        auto q = buffer_lru.iterator_to(*near);
+        buffer_lru.insert(q, *b);
+      } else if (level > 0) {
+        buffer_lru.push_front(*b);
+      } else {
+        buffer_lru.push_back(*b);
+      }
+      buffer_size += b->length;
     }
     void _rm_buffer(Buffer *b) override {
+      assert(buffer_size >= b->length);
+      buffer_size -= b->length;
+      auto q = buffer_lru.iterator_to(*b);
+      buffer_lru.erase(q);
     }
     void _adjust_buffer_size(Buffer *b, int64_t delta) override {
+      assert((int64_t)buffer_size + delta >= 0);
+      buffer_size += delta;
     }
     void _touch_buffer(Buffer *b) override {
+      auto p = buffer_lru.iterator_to(*b);
+      buffer_lru.erase(p);
+      buffer_lru.push_front(*b);
+      _audit("_touch_buffer end");
     }
 
-    void _trim(uint64_t onode_max, uint64_t buffer_max) override {
-    }
+    void _trim(uint64_t onode_max, uint64_t buffer_max) override; 
 
     void add_stats(uint64_t *onodes, uint64_t *extents,
                    uint64_t *blobs,
                    uint64_t *buffers,
                    uint64_t *bytes) override {
+
+      std::lock_guard<std::recursive_mutex> l(lock);
+      *extents += num_extents;
+      *blobs += num_blobs;
+      *buffers += buffer_lru.size();
+      *bytes += buffer_size;
+
     }
 
 #ifdef DEBUG_CACHE

@@ -592,16 +592,9 @@ void BlueStore::Cache::trim(
 }
 
 
-// LRUCache
+// NOOPCache
 #undef dout_prefix
-#define dout_prefix *_dout << "bluestore.LRUCache(" << this << ") "
-
-void BlueStore::LRUCache::_touch_onode(OnodeRef& o)
-{
-  auto p = onode_lru.iterator_to(*o);
-  onode_lru.erase(p);
-  onode_lru.push_front(*o);
-}
+#define dout_prefix *_dout << "bluestore.NOOPCache(" << this << ") "
 
 void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
 {
@@ -624,8 +617,64 @@ void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
     dout(20) << __func__ << " rm " << *b << dendl;
     b->space->_rm_buffer(b);
   }
+}
 
-  // onodes
+#ifdef DEBUG_CACHE
+void BlueStore::NOOPCache::_audit(const char *when)
+{
+  dout(10) << __func__ << " " << when << " start" << dendl;
+  uint64_t s = 0;
+  for (auto i = buffer_lru.begin(); i != buffer_lru.end(); ++i) {
+    s += i->length;
+  }
+  if (s != buffer_size) {
+    derr << __func__ << " buffer_size " << buffer_size << " actual " << s
+         << dendl;
+    for (auto i = buffer_lru.begin(); i != buffer_lru.end(); ++i) {
+      derr << __func__ << " " << *i << dendl;
+    }
+    assert(s == buffer_size);
+  }
+  dout(20) << __func__ << " " << when << " buffer_size " << buffer_size
+           << " ok" << dendl;
+}
+#endif
+
+
+// LRUCache
+#undef dout_prefix
+#define dout_prefix *_dout << "bluestore.LRUCache(" << this << ") "
+
+void BlueStore::LRUCache::_touch_onode(OnodeRef& o)
+{
+  auto p = onode_lru.iterator_to(*o);
+  onode_lru.erase(p);
+  onode_lru.push_front(*o);
+}
+
+void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
+{
+  dout(20) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
+           << " buffers " << buffer_size << " / " << buffer_max
+           << dendl;
+
+  _audit("trim start");
+
+  // buffers
+  while (buffer_size > buffer_max) {
+    auto i = buffer_lru.rbegin();
+    if (i == buffer_lru.rend()) {
+      // stop if buffer_lru is now empty
+      break;
+    }
+
+    Buffer *b = &*i;
+    assert(b->is_clean());
+    dout(20) << __func__ << " rm " << *b << dendl;
+    b->space->_rm_buffer(b);
+  }
+
+  // onodes 
   int num = onode_lru.size() - onode_max;
   if (num <= 0)
     return; // don't even try
@@ -638,7 +687,7 @@ void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
     int refs = o->nref.load();
     if (refs > 1) {
       dout(20) << __func__ << "  " << o->oid << " has " << refs
-	       << " refs; stopping with " << num << " left to trim" << dendl;
+               << " refs; stopping with " << num << " left to trim" << dendl;
       break;
     }
     dout(30) << __func__ << "  rm " << o->oid << dendl;
