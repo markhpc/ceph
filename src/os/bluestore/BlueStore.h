@@ -902,10 +902,6 @@ public:
     }
 
     uint64_t _get_buffer_bytes() override {
-      return 0;
-    }
-
-    uint64_t _get_buffer_bytes() override {
       return buffer_size;
     }
     void _add_buffer(Buffer *b, int level, Buffer *near) override {
