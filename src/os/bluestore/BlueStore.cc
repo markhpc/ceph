@@ -598,8 +598,7 @@ void BlueStore::Cache::trim(
 
 void BlueStore::NOOPCache::_trim(uint64_t onode_max, uint64_t buffer_max)
 {
-  dout(20) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max
-	   << " buffers " << buffer_size << " / " << buffer_max
+  dout(20) << " buffers " << buffer_size << " / " << buffer_max
 	   << dendl;
 
   _audit("trim start");
