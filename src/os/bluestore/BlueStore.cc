@@ -1683,7 +1683,6 @@ bool BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
 	p->shard_info->bytes = len;
         encoded_shards[pos].offset = p->offset;
         dirty_shards.push_back(encoded_shards[pos]);
-	t->set(PREFIX_OBJ, p->key, bl);
 	p->dirty = false;
       }
       p = n;
