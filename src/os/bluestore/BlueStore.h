@@ -1677,8 +1677,6 @@ private:
   void _txc_finish_kv(TransContext *txc);
   void _txc_finish(TransContext *txc);
 
-  void _osr_reap_done(OpSequencer *osr);
-
   void _kv_sync_thread();
   void _kv_stop() {
     {

@@ -6418,7 +6418,10 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       return;
 
     case TransContext::STATE_IO_DONE:
-      //assert(txc->osr->qlock.is_locked());  // see _txc_finish_io
+      // NOTE: we are holding osr qlock; see _txc_finish_io.  Note
+      // that that means that any subsequent state is also holding
+      // qlock if in_queue_context is true.
+      // assert(txc->osr->qlock.is_locked());
       if (txc->had_ios) {
 	++txc->osr->txc_with_unstable_io;
       }
@@ -6721,41 +6724,36 @@ void BlueStore::_txc_finish(TransContext *txc)
 
   op_queue_release_wal_throttle(txc);
 
+  CollectionRef c;
   OpSequencerRef osr = txc->osr;
-  {
-    std::lock_guard<std::mutex> l(osr->qlock);
-    txc->state = TransContext::STATE_DONE;
+  dout(20) << __func__ << " reaping osr " << osr << dendl;
+
+  std::unique_lock<std::mutex> l(osr->qlock, std::defer_lock);
+  bool must_lock_q = !txc->in_queue_context;
+  if (must_lock_q) {
+    l.lock();
   }
 
-  _osr_reap_done(osr.get());
-}
-
-void BlueStore::_osr_reap_done(OpSequencer *osr)
-{
-  CollectionRef c;
-
-  {
-    std::lock_guard<std::mutex> l(osr->qlock);
-    dout(20) << __func__ << " osr " << osr << dendl;
-    while (!osr->q.empty()) {
-      TransContext *txc = &osr->q.front();
-      dout(20) << __func__ << "  txc " << txc << " " << txc->get_state_name()
-	       << dendl;
-      if (txc->state != TransContext::STATE_DONE) {
-        break;
-      }
-
-      if (!c && txc->first_collection) {
-        c = txc->first_collection;
-      }
-
-      osr->q.pop_front();
-      txc->log_state_latency(logger, l_bluestore_state_done_lat);
-      delete txc;
-      osr->qcond.notify_all();
+  txc->state = TransContext::STATE_DONE;
+  while (!osr->q.empty()) {
+    TransContext *txc = &osr->q.front();
+    dout(20) << __func__ << "  txc " << txc << " " << txc->get_state_name()
+	     << dendl;
+    if (txc->state != TransContext::STATE_DONE) {
+      break;
     }
+    if (!c && txc->first_collection) {
+      c = txc->first_collection;
+    }
+    osr->q.pop_front();
+    txc->log_state_latency(logger, l_bluestore_state_done_lat);
+    delete txc;
+    osr->qcond.notify_all();
     if (osr->q.empty())
       dout(20) << __func__ << " osr " << osr << " q now empty" << dendl;
+  }
+  if (must_lock_q) {
+    l.unlock();
   }
 
   if (c) {
