@@ -1358,11 +1358,25 @@ public:
 
     std::atomic_int kv_committing_serially = {0};
 
+    /// txcs with completions in finisher
+    std::atomic_int txc_completions_queued = {0};
+
+    struct CompletionFlushed : public Context {
+      OpSequencer *osr;
+      CompletionFlushed(OpSequencer *o) : osr(o) {}
+      void finish(int r) {
+	ceph_abort();
+      }
+      void complete(int r) {
+	--osr->txc_completions_queued;
+      }
+    } completion_finished_context;
 
     OpSequencer(CephContext* cct)
 	//set the qlock to PTHREAD_MUTEX_RECURSIVE mode
       : Sequencer_impl(cct),
-	parent(NULL) {
+	parent(NULL),
+	completion_finished_context(this) {
     }
     ~OpSequencer() {
       assert(q.empty());

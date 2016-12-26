@@ -6676,20 +6676,43 @@ void BlueStore::_txc_finish_kv(TransContext *txc)
     txc->onreadable_sync = NULL;
   }
   unsigned n = txc->osr->parent->shard_hint.hash_to_shard(m_finisher_num);
+  bool queued = false;
   if (txc->oncommit) {
     logger->tinc(l_bluestore_commit_lat, ceph_clock_now() - txc->start);
-    finishers[n]->queue(txc->oncommit);
+    if (!txc->in_queue_context ||
+	txc->osr->txc_completions_queued.load() ||
+	!txc->oncommit->sync_complete(0)) {
+      finishers[n]->queue(txc->oncommit);
+      queued = true;
+    }
     txc->oncommit = NULL;
   }
   if (txc->onreadable) {
-    finishers[n]->queue(txc->onreadable);
+    if (!txc->in_queue_context ||
+	txc->osr->txc_completions_queued.load() ||
+	!txc->onreadable->sync_complete(0)) {
+      finishers[n]->queue(txc->onreadable);
+      queued = true;
+    }
     txc->onreadable = NULL;
   }
-
-  if (!txc->oncommits.empty()) {
-    finishers[n]->queue(txc->oncommits);
+  while (!txc->oncommits.empty()) {
+    auto f = txc->oncommits.front();
+    if (!txc->in_queue_context ||
+	txc->osr->txc_completions_queued.load() ||
+	!f->sync_complete(0)) {
+      finishers[n]->queue(f);
+      queued = true;
+    }
+    txc->oncommits.pop_front();
   }
-
+  if (queued) {
+    // ensure that if we have something queued for this sequencer we
+    // will know about it, and avoid doing a synchronous completion
+    // until the async completions have drained.
+    ++txc->osr->txc_completions_queued;
+    finishers[n]->queue(&txc->osr->completion_finished_context);
+  }
   --txc->osr->txc_with_unsubmitted_completions;
   op_queue_release_throttle(txc);
 }
