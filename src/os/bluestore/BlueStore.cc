@@ -7789,7 +7789,8 @@ void BlueStore::_do_write_small(
     // direct write into unused blocks of an existing mutable blob?
     uint64_t b_off = offset - head_pad - bstart;
     uint64_t b_len = length + head_pad + tail_pad;
-    if ((b_off % chunk_size == 0 && b_len % chunk_size == 0) &&
+    if (b_len >= g_conf->bluestore_prefer_wal_size &&
+	(b_off % chunk_size == 0 && b_len % chunk_size == 0) &&
 	b->get_blob().get_ondisk_length() >= b_off + b_len &&
 	b->get_blob().is_unused(b_off, b_len) &&
 	b->get_blob().is_allocated(b_off, b_len)) {
