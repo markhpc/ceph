@@ -132,11 +132,15 @@ public:
     : pg(pg), c(c), e(e) {}
   void finish(T t) {
     pg->lock();
+    sync_finish(t);
+    pg->unlock();
+  }
+  bool sync_finish(T t) {
     if (pg->pg_has_reset_since(e))
       delete c;
     else
       c->complete(t);
-    pg->unlock();
+    return true;
   }
 };
 
@@ -155,11 +159,15 @@ public:
     : pg(pg), c(c), e(e) {}
   void finish(int r) {
     pg->lock();
+    sync_finish(r);
+    pg->unlock();
+  }
+  bool sync_finish(int r) {
     if (pg->pg_has_reset_since(e))
       delete c;
     else
       c->complete(r);
-    pg->unlock();
+    return true;
   }
 };
 
@@ -216,7 +224,13 @@ class PrimaryLogPG::C_OSD_AppliedRecoveredObject : public Context {
   C_OSD_AppliedRecoveredObject(PrimaryLogPG *p, ObjectContextRef o) :
     pg(p), obc(o) {}
   void finish(int r) {
+    pg->lock();
+    sync_finish(r);
+    pg->unlock();
+  }
+  bool sync_finish(int r) override {
     pg->_applied_recovered_object(obc);
+    return true;
   }
 };
 
@@ -230,7 +244,13 @@ class PrimaryLogPG::C_OSD_CommittedPushedObject : public Context {
     pg(p), epoch(epoch), last_complete(lc) {
   }
   void finish(int r) {
+    pg->lock();
+    sync_complete(r);
+    pg->unlock();
+  }
+  bool sync_finish(int r) override {
     pg->_committed_pushed_object(epoch, last_complete);
+    return true;
   }
 };
 
@@ -240,7 +260,13 @@ class PrimaryLogPG::C_OSD_AppliedRecoveredObjectReplica : public Context {
   explicit C_OSD_AppliedRecoveredObjectReplica(PrimaryLogPG *p) :
     pg(p) {}
   void finish(int r) {
+    pg->lock();
+    sync_finish(r);
+    pg->unlock();
+  }
+  bool sync_finish(int r) override {
     pg->_applied_recovered_object_replica();
+    return true;
   }
 };
 
@@ -9619,7 +9645,6 @@ void PrimaryLogPG::finish_degraded_object(const hobject_t& oid)
 void PrimaryLogPG::_committed_pushed_object(
   epoch_t epoch, eversion_t last_complete)
 {
-  lock();
   if (!pg_has_reset_since(epoch)) {
     dout(10) << "_committed_pushed_object last_complete " << last_complete << " now ondisk" << dendl;
     last_complete_ondisk = last_complete;
@@ -9645,13 +9670,10 @@ void PrimaryLogPG::_committed_pushed_object(
   } else {
     dout(10) << "_committed_pushed_object pg has changed, not touching last_complete_ondisk" << dendl;
   }
-
-  unlock();
 }
 
 void PrimaryLogPG::_applied_recovered_object(ObjectContextRef obc)
 {
-  lock();
   dout(10) << "_applied_recovered_object " << *obc << dendl;
 
   assert(active_pushes >= 1);
@@ -9662,13 +9684,10 @@ void PrimaryLogPG::_applied_recovered_object(ObjectContextRef obc)
       && scrubber.is_chunky_scrub_active()) {
     requeue_scrub();
   }
-
-  unlock();
 }
 
 void PrimaryLogPG::_applied_recovered_object_replica()
 {
-  lock();
   dout(10) << "_applied_recovered_object_replica" << dendl;
 
   assert(active_pushes >= 1);
@@ -9684,8 +9703,6 @@ void PrimaryLogPG::_applied_recovered_object_replica()
 	scrubber.active_rep_scrub));
     scrubber.active_rep_scrub = OpRequestRef();
   }
-
-  unlock();
 }
 
 void PrimaryLogPG::recover_got(hobject_t oid, eversion_t v)
