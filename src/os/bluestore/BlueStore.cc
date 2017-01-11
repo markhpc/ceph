@@ -2382,7 +2382,7 @@ void Bluestore::Onode::print_shard_info(const string& title)
   int i = 0;
   for (auto s : onode.extent_map_shards)
   {
-    dout(6) << "shard: " << i << ", offset: " << s.offset << ", bytes: " s.bytes << dendl;
+    dout(6) << "shard: " << i << ", offset: " << s.offset << ", bytes: " << s.bytes << dendl;
     i++;
   }
 }
