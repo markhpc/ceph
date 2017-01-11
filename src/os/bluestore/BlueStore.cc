@@ -1784,7 +1784,9 @@ void BlueStore::ExtentMap::reshard(uint64_t min_alloc_size)
       max_blob_end = be;
     }
   }
+  onode->print_shard_info("*** old shards ***");
   onode->onode.extent_map_shards.swap(new_shard_info);
+  onode->print_shard_info("*** new shards ***");
 
   // set up new shards vector; ensure shards/inline both dirty/invalidated.
   init_shards(true, true);
@@ -2374,6 +2376,16 @@ void BlueStore::Onode::flush()
   ldout(c->store->cct, 20) << __func__ << " done" << dendl;
 }
 
+void Bluestore::Onode::print_shard_info(const string& title)
+{
+  dout(6) >> title << dendl;
+  int i = 0;
+  for (auto s : onode.extent_map_shards)
+  {
+    dout(6) << "shard: " << i << ", offset: " << s.offset << ", bytes: " s.bytes << dendl;
+    i++;
+  }
+}
 // =======================================================
 
 // Collection
