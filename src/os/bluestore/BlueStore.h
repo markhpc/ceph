@@ -815,7 +815,7 @@ public:
 	delete this;
     }
 
-    void print_shard_info();
+    void print_shard_info(const string& title);
   };
   typedef boost::intrusive_ptr<Onode> OnodeRef;
 
