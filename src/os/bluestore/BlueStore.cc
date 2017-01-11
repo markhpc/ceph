@@ -2376,7 +2376,7 @@ void BlueStore::Onode::flush()
   ldout(c->store->cct, 20) << __func__ << " done" << dendl;
 }
 
-void Bluestore::Onode::print_shard_info(const string& title)
+void BlueStore::Onode::print_shard_info(const string& title)
 {
   dout(6) >> title << dendl;
   int i = 0;
