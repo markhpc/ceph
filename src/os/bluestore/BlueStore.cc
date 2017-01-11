@@ -2378,11 +2378,11 @@ void BlueStore::Onode::flush()
 
 void BlueStore::Onode::print_shard_info(const string& title)
 {
-  dout(6) >> title << dendl;
+  ldout(c->store->cct, 6) << title << dendl;
   int i = 0;
   for (auto s : onode.extent_map_shards)
   {
-    dout(6) << "shard: " << i << ", offset: " << s.offset << ", bytes: " << s.bytes << dendl;
+    ldout(c->store->cct, 1) << "shard: " << i << ", offset: " << s.offset << ", bytes: " << s.bytes << dendl;
     i++;
   }
 }
