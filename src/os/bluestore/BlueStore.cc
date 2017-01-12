@@ -2378,7 +2378,7 @@ void BlueStore::Onode::flush()
 
 void BlueStore::Onode::print_shard_info(const string& title)
 {
-  ldout(c->store->cct, 6) << title << dendl;
+  ldout(c->store->cct, 1) << title << dendl;
   int i = 0;
   for (auto s : onode.extent_map_shards)
   {
@@ -6463,6 +6463,8 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
     bool reshard = o->extent_map.needs_reshard;
     if (!reshard) {
       reshard = o->extent_map.update(t, false);
+      if (reshard) {
+        dout(1) << __func__ << " resharding from update, not needs_reshard." << dendl;
     }
     if (reshard) {
       dout(20) << __func__ << "  resharding extents for " << o->oid << dendl;
