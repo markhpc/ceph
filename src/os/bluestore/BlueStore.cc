@@ -6465,6 +6465,7 @@ void BlueStore::_txc_write_nodes(TransContext *txc, KeyValueDB::Transaction t)
       reshard = o->extent_map.update(t, false);
       if (reshard) {
         dout(1) << __func__ << " resharding from update, not needs_reshard." << dendl;
+      }
     }
     if (reshard) {
       dout(20) << __func__ << "  resharding extents for " << o->oid << dendl;
