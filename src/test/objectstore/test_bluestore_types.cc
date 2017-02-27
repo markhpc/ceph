@@ -1222,7 +1222,7 @@ TEST(GarbageCollector, BasicTest)
   BlueStore::Onode onode(&coll, ghobject_t(), "");
   BlueStore::ExtentMap em(&onode);
 
-  BlueStore::extent_map_t old_extents;
+  BlueStore::old_extent_map_t old_extents;
 
 
  /*
@@ -1271,7 +1271,7 @@ TEST(GarbageCollector, BasicTest)
     em.extent_map.insert(*new BlueStore::Extent(4096, 0, 10, b3));
     b3->get_ref(&coll, 0, 10);
 
-    old_extents.push_back(*new BlueStore::Extent(300, 300, 10, b1)); 
+    old_extents.push_back(*new BlueStore::OldExtent(300, 300, 10, b1)); 
     b1->get_ref(&coll, 300, 10);
 
     saving = gc.estimate(300, 100, em, old_extents, 4096);
@@ -1308,7 +1308,7 @@ TEST(GarbageCollector, BasicTest)
     BlueStore::Onode onode(&coll, ghobject_t(), "");
     BlueStore::ExtentMap em(&onode);
 
-    BlueStore::extent_map_t old_extents;
+    BlueStore::old_extent_map_t old_extents;
     BlueStore::GarbageCollector gc(g_ceph_context);
     int64_t saving;
     BlueStore::BlobRef b1(new BlueStore::Blob);
@@ -1339,12 +1339,12 @@ TEST(GarbageCollector, BasicTest)
     em.extent_map.insert(*new BlueStore::Extent(0x3f000, 0x3f000, 0x1000, b1));
     b1->get_ref(&coll, 0x3f000, 0x1000);
 
-    old_extents.push_back(*new BlueStore::Extent(0x8000, 0x8000, 0x8000, b1)); 
+    old_extents.push_back(*new BlueStore::OldExtent(0x8000, 0x8000, 0x8000, b1)); 
     b1->get_ref(&coll, 0x8000, 0x8000);
     old_extents.push_back(
-      *new BlueStore::Extent(0x10000, 0x10000, 0x20000, b1));
+      *new BlueStore::OldExtent(0x10000, 0x10000, 0x20000, b1));
     b1->get_ref(&coll, 0x10000, 0x20000);
-    old_extents.push_back(*new BlueStore::Extent(0x30000, 0x30000, 0xf000, b1)); 
+    old_extents.push_back(*new BlueStore::OldExtent(0x30000, 0x30000, 0xf000, b1)); 
     b1->get_ref(&coll, 0x30000, 0xf000);
 
     saving = gc.estimate(0x30000, 0xf000, em, old_extents, 0x10000);
@@ -1391,7 +1391,7 @@ TEST(GarbageCollector, BasicTest)
       *new BlueStore::Extent(0x3000, 0, 0x4000, b2)); // new extent
     b2->get_ref(&coll, 0, 0x4000);
 
-    old_extents.push_back(*new BlueStore::Extent(0x3000, 0x3000, 0x1000, b1)); 
+    old_extents.push_back(*new BlueStore::OldExtent(0x3000, 0x3000, 0x1000, b1)); 
     b1->get_ref(&coll, 0x3000, 0x1000);
 
     saving = gc.estimate(0x3000, 0x4000, em, old_extents, 0x1000);
@@ -1428,7 +1428,7 @@ TEST(GarbageCollector, BasicTest)
     BlueStore::Onode onode(&coll, ghobject_t(), "");
     BlueStore::ExtentMap em(&onode);
 
-    BlueStore::extent_map_t old_extents;
+    BlueStore::old_extent_map_t old_extents;
     BlueStore::GarbageCollector gc(g_ceph_context);
     int64_t saving;
     BlueStore::BlobRef b0(new BlueStore::Blob);
@@ -1463,13 +1463,13 @@ TEST(GarbageCollector, BasicTest)
     em.extent_map.insert(*new BlueStore::Extent(0x3f000, 0x1f000, 0x1000, b1));
     b1->get_ref(&coll, 0x1f000, 0x1000);
 
-    old_extents.push_back(*new BlueStore::Extent(0x8000, 0x8000, 0x8000, b0)); 
+    old_extents.push_back(*new BlueStore::OldExtent(0x8000, 0x8000, 0x8000, b0)); 
     b0->get_ref(&coll, 0x8000, 0x8000);
     old_extents.push_back(
-      *new BlueStore::Extent(0x10000, 0x10000, 0x10000, b0)); 
+      *new BlueStore::OldExtent(0x10000, 0x10000, 0x10000, b0)); 
     b0->get_ref(&coll, 0x10000, 0x10000);
     old_extents.push_back(
-      *new BlueStore::Extent(0x20000, 0x00000, 0x1f000, b1)); 
+      *new BlueStore::OldExtent(0x20000, 0x00000, 0x1f000, b1)); 
     b1->get_ref(&coll, 0x0, 0x1f000);
 
     saving = gc.estimate(0x30000, 0xf000, em, old_extents, 0x10000);
