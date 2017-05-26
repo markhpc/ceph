@@ -1034,6 +1034,8 @@ public:
     std::atomic<uint64_t> num_extents = {0};
     std::atomic<uint64_t> num_blobs = {0};
 
+    size_t last_trim_seq = 0;
+
     static Cache *create(CephContext* cct, string type, PerfCounters *logger);
 
     Cache(CephContext* cct) : cct(cct), logger(nullptr) {}
@@ -1400,6 +1402,12 @@ public:
     }
     void reset() {
       *this = volatile_statfs();
+    }
+    volatile_statfs& operator+=(const volatile_statfs& other) {
+      for (size_t i = 0; i < STATFS_LAST; ++i) {
+	values[i] += other.values[i];
+      }
+      return *this;
     }
     int64_t& allocated() {
       return values[STATFS_ALLOCATED];
@@ -1883,6 +1891,22 @@ private:
 
   // cache trim control
 
+  // note that these update in a racy way, but we don't *really* care if
+  // they're perfectly accurate.  they are all word sized so they will
+  // individually update atomically, but may not be coherent with each other.
+  size_t mempool_seq = 0;
+  size_t mempool_bytes = 0;
+  size_t mempool_onodes = 0;
+
+  std::mutex vstatfs_lock;
+  volatile_statfs vstatfs;
+
+  void get_mempool_stats(size_t *seq, uint64_t *bytes, uint64_t *onodes) {
+    *seq = mempool_seq;
+    *bytes = mempool_bytes;
+    *onodes = mempool_onodes;
+  }
+
   struct MempoolThread : public Thread {
     BlueStore *store;
     Cond cond;
@@ -1946,6 +1970,8 @@ private:
 			       bool create);
 
   int _open_super_meta();
+
+  void open_statfs();
 
   int _reconcile_bluefs_freespace();
   int _balance_bluefs_freespace(PExtentVector *extents);
