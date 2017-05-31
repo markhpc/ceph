@@ -5528,6 +5528,7 @@ int BlueStore::fsck(bool deep)
 	  used_omap_head.insert(o->onode.nid);
 	}
       }
+      c->trim_cache();
     }
   }
   dout(1) << __func__ << " checking shared_blobs" << dendl;
@@ -5867,6 +5868,7 @@ bool BlueStore::exists(CollectionHandle &c_, const ghobject_t& oid)
       r = false;
   }
 
+  c->trim_cache();
   return r;
 }
 
@@ -5904,6 +5906,7 @@ int BlueStore::stat(
     st->st_nlink = 1;
   }
 
+  c->trim_cache();
   int r = 0;
   if (_debug_mdata_eio(oid)) {
     r = -EIO;
@@ -5980,6 +5983,7 @@ int BlueStore::read(
 
  out:
   assert(allow_eio || r != -EIO);
+  c->trim_cache();
   if (r == 0 && _debug_data_eio(oid)) {
     r = -EIO;
     derr << __func__ << " " << c->cid << " " << oid << " INJECT EIO" << dendl;
@@ -6419,6 +6423,7 @@ int BlueStore::_fiemap(
   }
 
  out:
+  c->trim_cache();
   dout(20) << __func__ << " 0x" << std::hex << offset << "~" << length
 	   << " size = 0x(" << destset << ")" << std::dec << dendl;
   return 0;
@@ -6522,6 +6527,7 @@ int BlueStore::getattr(
     r = 0;
   }
  out:
+  c->trim_cache();
   if (r == 0 && _debug_mdata_eio(oid)) {
     r = -EIO;
     derr << __func__ << " " << c->cid << " " << oid << " INJECT EIO" << dendl;
@@ -6569,6 +6575,7 @@ int BlueStore::getattrs(
   }
 
  out:
+  c->trim_cache();
   if (r == 0 && _debug_mdata_eio(oid)) {
     r = -EIO;
     derr << __func__ << " " << c->cid << " " << oid << " INJECT EIO" << dendl;
@@ -6645,6 +6652,7 @@ int BlueStore::collection_list(
     r = _collection_list(c, start, end, max, ls, pnext);
   }
 
+  c->trim_cache();
   dout(10) << __func__ << " " << c->cid
     << " start " << start << " end " << end << " max " << max
     << " = " << r << ", ls.size() = " << ls->size()
@@ -7552,7 +7560,7 @@ void BlueStore::_txc_finish_io(TransContext *txc)
   std::lock_guard<std::mutex> l(osr->qlock);
   txc->state = TransContext::STATE_IO_DONE;
 
-  release aio contexts (including pinned buffers).
+  // release aio contexts (including pinned buffers).
   txc->ioc.running_aios.clear();
 
   OpSequencer::q_list_t::iterator p = osr->q.iterator_to(*txc);
