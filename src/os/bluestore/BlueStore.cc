@@ -7552,6 +7552,9 @@ void BlueStore::_txc_finish_io(TransContext *txc)
   std::lock_guard<std::mutex> l(osr->qlock);
   txc->state = TransContext::STATE_IO_DONE;
 
+  release aio contexts (including pinned buffers).
+  txc->ioc.running_aios.clear();
+
   OpSequencer::q_list_t::iterator p = osr->q.iterator_to(*txc);
   while (p != osr->q.begin()) {
     --p;
@@ -7777,6 +7780,7 @@ void BlueStore::_txc_finish(TransContext *txc)
   OpSequencerRef osr = txc->osr;
   CollectionRef c;
   bool empty = false;
+  bool submit_deferred = false;
   OpSequencer::q_list_t releasing_txc;
   {
     std::lock_guard<std::mutex> l(osr->qlock);
@@ -7791,6 +7795,10 @@ void BlueStore::_txc_finish(TransContext *txc)
 	  deferred_aggressive) {
 	  // for _osr_drain_preceding()
           notify = true;
+	}
+	if (txc->state == TransContext::STATE_DEFERRED_QUEUED &&
+	    osr->q.size() > g_conf->bluestore_max_deferred_txc) {
+	  submit_deferred = true;
 	}
         break;
       }
@@ -7819,6 +7827,16 @@ void BlueStore::_txc_finish(TransContext *txc)
     releasing_txc.pop_front();
     txc->log_state_latency(logger, l_bluestore_state_done_lat);
     delete txc;
+  }
+
+  if (c) {
+    c->trim_cache();
+  }
+
+  if (submit_deferred) {
+    // we're pinning memory; flush!  we could be more fine-grained here but
+    // i'm not sure it's worth the bother.
+    deferred_try_submit();
   }
 
   if (empty && osr->zombie) {
