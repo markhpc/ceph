@@ -438,6 +438,7 @@ if(WITH_REENTRANT_STRSIGNAL)
 endif(WITH_REENTRANT_STRSIGNAL)
 
 set(HAVE_LIBROCKSDB 1)
+set(HAVE_FORESTDB 1)
 
 # -lz link into kv
 find_package(ZLIB REQUIRED)
@@ -529,6 +530,12 @@ option(WITH_SYSTEM_ROCKSDB "require and build with system rocksdb" OFF)
 if (WITH_SYSTEM_ROCKSDB)
   find_package(rocksdb REQUIRED)
 endif()
+
+# ForestDB
+ option(WITH_SYSTEM_FORESTDB "require and build with system forestdb" OFF)
+ if (WITH_SYSTEM_FORESTDB)
+   find_package(forestdb REQUIRED)
+ endif()
 
 # Boost
 option(WITH_SYSTEM_BOOST "require and build with system Boost" OFF)

@@ -33,6 +33,10 @@ if(NOT WITH_SYSTEM_ROCKSDB)
   list(APPEND merge_libs ${ROCKSDB_LIBRARIES})
 endif(NOT WITH_SYSTEM_ROCKSDB)
 
+if(NOT WITH_SYSTEM_FORESTDB)
+  list(APPEND merge_libs ${FORESTDB_LIBRARIES})
+endif(NOT WITH_SYSTEM_FORESTDB)
+
 if(HAVE_ARMV8_CRC)
   list(APPEND merge_libs common_crc_aarch64)
 endif(HAVE_ARMV8_CRC)

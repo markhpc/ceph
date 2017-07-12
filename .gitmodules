@@ -58,3 +58,7 @@
 [submodule "src/rapidjson"]
 	path = src/rapidjson
 	url = https://github.com/ceph/rapidjson
+[submodule "forestdb"]
+	path = src/forestdb
+	url = https://github.com/markhpc/forestdb
+	branch = wip-cmake-libs

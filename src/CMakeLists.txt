@@ -844,6 +844,64 @@ if (NOT WITH_SYSTEM_ROCKSDB)
 
 endif(NOT WITH_SYSTEM_ROCKSDB)
 
+# make forestdb statically
+
+if (NOT WITH_SYSTEM_FORESTDB)
+  set(FORESTDB_CMAKE_ARGS -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+  list(APPEND FORESTDB_CMAKE_ARGS -DBUILD_SHARED_LIBS=OFF)
+
+  if(ALLOCATOR STREQUAL "jemalloc")
+    list(APPEND FORESTDB_CMAKE_ARGS -DWITH_JEMALLOC=ON)
+  endif()
+
+  if (WITH_CCACHE AND CCACHE_FOUND)
+    list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_CXX_COMPILER=ccache)
+    list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_CXX_COMPILER_ARG1=${CMAKE_CXX_COMPILER})
+  else(WITH_CCACHE AND CCACHE_FOUND)
+    list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+  endif(WITH_CCACHE AND CCACHE_FOUND)
+
+  # We really want to have the CRC32 calculation in RocksDB accelerated
+  # with SSE 4.2. For details refer to rocksdb/util/crc32c.cc.
+  if (HAVE_INTEL_SSE4_2)
+    list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_CXX_FLAGS=${SIMD_COMPILE_FLAGS})
+  else()
+    list(APPEND FORESTDB_CMAKE_ARGS -DWITH_SSE42=OFF)
+  endif()
+  list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_AR=${CMAKE_AR})
+  list(APPEND FORESTDB_CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+
+  if (CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+    list(APPEND FORESTDB_CMAKE_ARGS -DFAIL_ON_WARNINGS=OFF)
+  endif()
+
+  # we use an external project and copy the sources to bin directory to ensure
+  # that object files are built outside of the source tree.
+  include(ExternalProject)
+  ExternalProject_Add(forestdb_ext
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/forestdb
+    CMAKE_ARGS ${FORESTDB_CMAKE_ARGS}
+    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/forestdb
+    BUILD_COMMAND $(MAKE) forestdb
+    INSTALL_COMMAND "true")
+
+  # force rocksdb make to be called on each time
+  ExternalProject_Add_Step(forestdb_ext forcebuild
+    DEPENDEES configure
+    DEPENDERS build
+    COMMAND "true"
+    ALWAYS 1)
+
+  set(FORESTDB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/forestdb/include)
+
+  add_library(forestdb STATIC IMPORTED)
+  add_dependencies(forestdb forestdb_ext)
+  set_property(TARGET forestdb PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/forestdb/libforestdb.a")
+  set(FORESTDB_LIBRARIES forestdb)
+
+endif(NOT WITH_SYSTEM_FORESTDB)
+
+
 include(TestBigEndian)
 test_big_endian(CEPH_BIG_ENDIAN)
 if(NOT CEPH_BIG_ENDIAN)
