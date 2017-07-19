@@ -12,6 +12,9 @@
 #ifdef HAVE_KINETIC
 #include "KineticStore.h"
 #endif
+#ifdef HAVE_LIBFORESTDB
+#include "ForestDBStore.h"
+#endif
 
 KeyValueDB *KeyValueDB::create(CephContext *cct, const string& type,
 			       const string& dir,
@@ -33,7 +36,12 @@ KeyValueDB *KeyValueDB::create(CephContext *cct, const string& type,
     return new RocksDBStore(cct, dir, p);
   }
 #endif
-
+#ifdef HAVE_LIBFORESTDB
+  if (type == "forestdb" &&
+      cct->check_experimental_feature_enabled("forestdb")) {
+    return new ForestDBStore(cct, dir);
+  }
+#endif
   if ((type == "memdb") && 
     cct->check_experimental_feature_enabled("memdb")) {
     return new MemDB(cct, dir, p);
@@ -56,6 +64,11 @@ int KeyValueDB::test_init(const string& type, const string& dir)
 #ifdef HAVE_LIBROCKSDB
   if (type == "rocksdb") {
     return RocksDBStore::_test_init(dir);
+  }
+#endif
+#ifdef HAVE_LIBFORESTDB
+  if (type == "forestdb") {
+    return ForestDBStore::_test_init(dir);
   }
 #endif
 
