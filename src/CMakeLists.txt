@@ -540,8 +540,11 @@ set(libcommon_files
   ${auth_files}
   ${mds_files})
 
+CHECK_C_COMPILER_FLAG("-fvar-tracking-assignments" HAS_VTA)
 if(HAS_VTA)
-  set_source_files_properties(common/config.cc
+  set_source_files_properties(
+    common/config.cc
+    common/options.cc
     PROPERTIES COMPILE_FLAGS -fno-var-tracking-assignments)
 endif()
 
@@ -696,6 +699,7 @@ if (WITH_MGR)
       mgr/ClusterState.cc
       mgr/PyModules.cc
       mgr/PyFormatter.cc
+      mgr/PyOSDMap.cc
       mgr/PyState.cc
       mgr/MgrPyModule.cc
       mgr/MgrStandby.cc
@@ -729,7 +733,6 @@ add_subdirectory(ceph-volume)
 add_subdirectory(ceph-detect-init)
 
 ## dencoder
-CHECK_C_COMPILER_FLAG("-fvar-tracking-assignments" HAS_VTA)
 if(HAS_VTA)
   set_source_files_properties(test/encoding/ceph_dencoder.cc
     PROPERTIES COMPILE_FLAGS -fno-var-tracking-assignments)

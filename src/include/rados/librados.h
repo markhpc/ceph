@@ -49,6 +49,7 @@ extern "C" {
 
 #define LIBRADOS_SUPPORTS_WATCH 1
 #define LIBRADOS_SUPPORTS_SERVICES 1
+#define LIBRADOS_SUPPORTS_APP_METADATA 1
 
 /* RADOS lock flags
  * They are also defined in cls_lock_types.h. Keep them in sync!
@@ -3800,7 +3801,7 @@ CEPH_RADOS_API int rados_monitor_log2(rados_t cluster, const char *level,
  *
  * @param cluster handle
  * @param service service name
- * @param daemon deamon instance name
+ * @param daemon daemon instance name
  * @param metadata_dict static daemon metadata dict
  */
 CEPH_RADOS_API int rados_service_register(

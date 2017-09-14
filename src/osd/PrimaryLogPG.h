@@ -1238,7 +1238,6 @@ protected:
   class C_OSD_AppliedRecoveredObject;
   class C_OSD_CommittedPushedObject;
   class C_OSD_AppliedRecoveredObjectReplica;
-  void sub_op_remove(OpRequestRef op);
 
   void _applied_recovered_object(ObjectContextRef obc);
   void _applied_recovered_object_replica();
@@ -1360,7 +1359,7 @@ protected:
   // -- proxywrite --
   map<ceph_tid_t, ProxyWriteOpRef> proxywrite_ops;
 
-  void do_proxy_write(OpRequestRef op, const hobject_t& missing_oid, ObjectContextRef obc = NULL);
+  void do_proxy_write(OpRequestRef op, ObjectContextRef obc = NULL);
   void finish_proxy_write(hobject_t oid, ceph_tid_t tid, int r);
   void cancel_proxy_write(ProxyWriteOpRef pwop);
 
@@ -1386,8 +1385,6 @@ public:
   void record_write_error(OpRequestRef op, const hobject_t &soid,
 			  MOSDOpReply *orig_reply, int r);
   void do_pg_op(OpRequestRef op);
-  void do_sub_op(OpRequestRef op) override;
-  void do_sub_op_reply(OpRequestRef op) override;
   void do_scan(
     OpRequestRef op,
     ThreadPool::TPHandle &handle) override;
@@ -1551,10 +1548,10 @@ private:
       };
       auto *pg = context< SnapTrimmer >().pg;
       if (pg->cct->_conf->osd_snap_trim_sleep > 0) {
-	wakeup = new OnTimer{pg, pg->get_osdmap()->get_epoch()};
 	Mutex::Locker l(pg->osd->snap_sleep_lock);
-	pg->osd->snap_sleep_timer.add_event_after(
-	  pg->cct->_conf->osd_snap_trim_sleep, wakeup);
+	wakeup = pg->osd->snap_sleep_timer.add_event_after(
+	  pg->cct->_conf->osd_snap_trim_sleep,
+	  new OnTimer{pg, pg->get_osdmap()->get_epoch()});
       } else {
 	post_event(SnapTrimTimerReady());
       }

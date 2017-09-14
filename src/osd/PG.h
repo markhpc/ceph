@@ -351,7 +351,7 @@ public:
   // v8 was the move to a per-pg pgmeta object
   // v7 was SnapMapper addition in 86658392516d5175b2756659ef7ffaaf95b0f8ad
   // (first appeared in cuttlefish).
-  static const __u8 compat_struct_v = 7;
+  static const __u8 compat_struct_v = 10;
   bool must_upgrade() {
     return info_struct_v < cur_struct_v;
   }
@@ -724,7 +724,6 @@ protected:
   
   bool        need_up_thru;
   set<pg_shard_t>    stray_set;   // non-acting osds that have PG data.
-  eversion_t  oldest_update; // acting: lowest (valid) last_update in active set
   map<pg_shard_t, pg_info_t>    peer_info;   // info from peers (stray or prior)
   set<pg_shard_t> peer_purged; // peers purged
   map<pg_shard_t, pg_missing_t> peer_missing;
@@ -1090,9 +1089,7 @@ public:
     map<pg_shard_t, pg_info_t>::const_iterator auth_log_shard,
     unsigned size,
     const vector<int> &acting,
-    pg_shard_t acting_primary,
     const vector<int> &up,
-    pg_shard_t up_primary,
     const map<pg_shard_t, pg_info_t> &all_info,
     bool restrict_to_up_acting,
     vector<int> *want,
@@ -1104,7 +1101,6 @@ public:
     map<pg_shard_t, pg_info_t>::const_iterator auth_log_shard,
     unsigned size,
     const vector<int> &acting,
-    pg_shard_t acting_primary,
     const vector<int> &up,
     pg_shard_t up_primary,
     const map<pg_shard_t, pg_info_t> &all_info,
@@ -1402,7 +1398,6 @@ public:
     OpRequestRef op,
     ThreadPool::TPHandle &handle);
   void do_replica_scrub_map(OpRequestRef op);
-  void sub_op_scrub_map(OpRequestRef op);
 
   void handle_scrub_reserve_request(OpRequestRef op);
   void handle_scrub_reserve_grant(OpRequestRef op, pg_shard_t from);
@@ -2506,8 +2501,6 @@ public:
   ) = 0;
 
   virtual void do_op(OpRequestRef& op) = 0;
-  virtual void do_sub_op(OpRequestRef op) = 0;
-  virtual void do_sub_op_reply(OpRequestRef op) = 0;
   virtual void do_scan(
     OpRequestRef op,
     ThreadPool::TPHandle &handle

@@ -34,14 +34,12 @@
 #define dout_prefix *_dout << "bdev(" << this << " " << path << ") "
 
 KernelDevice::KernelDevice(CephContext* cct, aio_callback_t cb, void *cbpriv)
-  : BlockDevice(cct),
+  : BlockDevice(cct, cb, cbpriv),
     fd_direct(-1),
     fd_buffered(-1),
     fs(NULL), aio(false), dio(false),
     debug_lock("KernelDevice::debug_lock"),
     aio_queue(cct->_conf->bdev_aio_max_queue_depth),
-    aio_callback(cb),
-    aio_callback_priv(cbpriv),
     aio_stop(false),
     aio_thread(this),
     injecting_crash(0)
@@ -200,7 +198,7 @@ static string get_dev_property(const char *dev, const char *property)
   return val;
 }
 
-int KernelDevice::collect_metadata(string prefix, map<string,string> *pm) const
+int KernelDevice::collect_metadata(const string& prefix, map<string,string> *pm) const
 {
   (*pm)[prefix + "rotational"] = stringify((int)(bool)rotational);
   (*pm)[prefix + "size"] = stringify(get_size());
@@ -344,6 +342,7 @@ void KernelDevice::_aio_thread()
 					 aio, max);
     if (r < 0) {
       derr << __func__ << " got " << cpp_strerror(r) << dendl;
+      assert(0 == "got unexpected error from io_getevents");
     }
     if (r > 0) {
       dout(30) << __func__ << " got " << r << " completed aios" << dendl;
@@ -364,11 +363,21 @@ void KernelDevice::_aio_thread()
 	io_since_flush.store(true);
 
 	int r = aio[i]->get_return_value();
-	dout(10) << __func__ << " finished aio " << aio[i] << " r " << r
-		 << " ioc " << ioc
-		 << " with " << (ioc->num_running.load() - 1)
-		 << " aios left" << dendl;
-	assert(r >= 0);
+       if (r < 0) {
+         derr << __func__ << " got " << cpp_strerror(r) << dendl;
+         assert(0 == "got unexpected error from io_getevents");
+       }
+	
+       if (aio[i]->length != (uint64_t)r) {
+         derr << "aio to " << aio[i]->offset << "~" << aio[i]->length
+              << " but returned: " << r << dendl;
+         assert(0 == "unexpected aio error");
+       }
+
+       dout(10) << __func__ << " finished aio " << aio[i] << " r " << r
+                << " ioc " << ioc
+                << " with " << (ioc->num_running.load() - 1)
+                << " aios left" << dendl;
 
 	// NOTE: once num_running and we either call the callback or
 	// call aio_wake we cannot touch ioc or aio[] as the caller
@@ -511,7 +520,7 @@ void KernelDevice::aio_submit(IOContext *ioc)
   void *priv = static_cast<void*>(ioc);
   int r, retries = 0;
   r = aio_queue.submit_batch(ioc->running_aios.begin(), e, 
-			     ioc->num_running.load(), priv, &retries);
+			     pending, priv, &retries);
   
   if (retries)
     derr << __func__ << " retries " << retries << dendl;
@@ -567,11 +576,7 @@ int KernelDevice::write(
   dout(20) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	   << (buffered ? " (buffered)" : " (direct)")
 	   << dendl;
-  assert(off % block_size == 0);
-  assert(len % block_size == 0);
-  assert(len > 0);
-  assert(off < size);
-  assert(off + len <= size);
+  assert(is_valid_io(off, len));
 
   if ((!buffered || bl.get_num_buffers() >= IOV_MAX) &&
       bl.rebuild_aligned_size_and_memory(block_size, block_size)) {
@@ -653,11 +658,7 @@ int KernelDevice::read(uint64_t off, uint64_t len, bufferlist *pbl,
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len << std::dec
 	  << (buffered ? " (buffered)" : " (direct)")
 	  << dendl;
-  assert(off % block_size == 0);
-  assert(len % block_size == 0);
-  assert(len > 0);
-  assert(off < size);
-  assert(off + len <= size);
+  assert(is_valid_io(off, len));
 
   _aio_log_start(ioc, off, len);
 

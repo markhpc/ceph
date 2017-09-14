@@ -1791,7 +1791,6 @@ static int update_period(const string& realm_id, const string& realm_name,
   }
   encode_json("period", period, formatter);
   formatter->flush(cout);
-  cout << std::endl;
   return 0;
 }
 
@@ -2396,6 +2395,7 @@ int main(int argc, const char **argv)
   string start_marker;
   string end_marker;
   int max_entries = -1;
+  bool max_entries_specified = false;
   int admin = false;
   bool admin_specified = false;
   int system = false;
@@ -2557,6 +2557,7 @@ int main(int argc, const char **argv)
       max_buckets_specified = true;
     } else if (ceph_argparse_witharg(args, i, &val, "--max-entries", (char*)NULL)) {
       max_entries = (int)strict_strtol(val.c_str(), 10, &err);
+      max_entries_specified = true;
       if (!err.empty()) {
         cerr << "ERROR: failed to parse max entries: " << err << std::endl;
         return EINVAL;
@@ -2993,7 +2994,6 @@ int main(int argc, const char **argv)
 	}
 	encode_json("period", period, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_PERIOD_GET_CURRENT:
@@ -3020,7 +3020,6 @@ int main(int argc, const char **argv)
 	encode_json("periods", periods, formatter);
 	formatter->close_section();
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_PERIOD_UPDATE:
@@ -3075,7 +3074,6 @@ int main(int argc, const char **argv)
 
         encode_json("period", period, formatter);
         formatter->flush(cout);
-        cout << std::endl;
       }
       break;
     case OPT_GLOBAL_QUOTA_GET:
@@ -3153,7 +3151,6 @@ int main(int argc, const char **argv)
         }
 
         formatter->flush(cout);
-        cout << std::endl;
       }
       break;
     case OPT_REALM_CREATE:
@@ -3179,7 +3176,6 @@ int main(int argc, const char **argv)
 
 	encode_json("realm", realm, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_REALM_DELETE:
@@ -3216,7 +3212,6 @@ int main(int argc, const char **argv)
 	}
 	encode_json("realm", realm, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_REALM_GET_DEFAULT:
@@ -3253,7 +3248,6 @@ int main(int argc, const char **argv)
 	encode_json("realms", realms, formatter);
 	formatter->close_section();
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_REALM_LIST_PERIODS:
@@ -3273,7 +3267,6 @@ int main(int argc, const char **argv)
 	encode_json("periods", periods, formatter);
 	formatter->close_section();
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
 
@@ -3441,7 +3434,6 @@ int main(int argc, const char **argv)
 
         encode_json("realm", realm, formatter);
         formatter->flush(cout);
-        cout << std::endl;
       }
       return 0;
 
@@ -3524,7 +3516,6 @@ int main(int argc, const char **argv)
 
 	encode_json("zonegroup", zonegroup, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONEGROUP_DEFAULT:
@@ -3578,7 +3569,6 @@ int main(int argc, const char **argv)
 
 	encode_json("zonegroup", zonegroup, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONEGROUP_LIST:
@@ -3606,7 +3596,6 @@ int main(int argc, const char **argv)
 	encode_json("zonegroups", zonegroups, formatter);
 	formatter->close_section();
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONEGROUP_MODIFY:
@@ -3797,7 +3786,6 @@ int main(int argc, const char **argv)
 
 	encode_json("placement_targets", zonegroup.placement_targets, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONEGROUP_PLACEMENT_ADD:
@@ -3925,7 +3913,6 @@ int main(int argc, const char **argv)
 
 	encode_json("zone", zone, formatter);
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONE_DEFAULT:
@@ -4113,7 +4100,6 @@ int main(int argc, const char **argv)
 	encode_json("zones", zones, formatter);
 	formatter->close_section();
 	formatter->flush(cout);
-	cout << std::endl;
       }
       break;
     case OPT_ZONE_MODIFY:
@@ -4596,7 +4582,6 @@ int main(int argc, const char **argv)
 
       encode_json("period", period, formatter);
       formatter->flush(cout);
-      cout << std::endl;
     }
     return 0;
   case OPT_ROLE_CREATE:
@@ -5282,6 +5267,14 @@ next:
   }
 
   if (opt_cmd == OPT_BI_GET) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+    if (object.empty()) {
+      cerr << "ERROR: object not specified" << std::endl;
+      return EINVAL;
+    }
     RGWBucketInfo bucket_info;
     int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
     if (ret < 0) {
@@ -5306,6 +5299,10 @@ next:
   }
 
   if (opt_cmd == OPT_BI_PUT) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
     RGWBucketInfo bucket_info;
     int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
     if (ret < 0) {
@@ -5852,6 +5849,11 @@ next:
     if (inconsistent_index == false) {
       RGWBucketAdminOp::remove_bucket(store, bucket_op, bypass_gc, true);
     } else {
+      if (!yes_i_really_mean_it) {
+	cerr << "using --inconsistent_index can corrupt the bucket index " << std::endl
+	<< "do you really mean it? (requires --yes-i-really-mean-it)" << std::endl;
+	return 1;
+      }
       RGWBucketAdminOp::remove_bucket(store, bucket_op, bypass_gc, false);
     }
   }
@@ -6093,31 +6095,47 @@ next:
     }
     void *handle;
     int max = 1000;
-    int ret = store->meta_mgr->list_keys_init(metadata_key, &handle);
+    int ret = store->meta_mgr->list_keys_init(metadata_key, marker, &handle);
     if (ret < 0) {
       cerr << "ERROR: can't get key: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
 
     bool truncated;
+    uint64_t count = 0;
 
+    if (max_entries_specified) {
+      formatter->open_object_section("result");
+    }
     formatter->open_array_section("keys");
 
+    uint64_t left;
     do {
       list<string> keys;
-      ret = store->meta_mgr->list_keys_next(handle, max, keys, &truncated);
+      left = (max_entries_specified ? max_entries - count : max);
+      ret = store->meta_mgr->list_keys_next(handle, left, keys, &truncated);
       if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: lists_keys_next(): " << cpp_strerror(-ret) << std::endl;
         return -ret;
       } if (ret != -ENOENT) {
 	for (list<string>::iterator iter = keys.begin(); iter != keys.end(); ++iter) {
 	  formatter->dump_string("key", *iter);
+          ++count;
 	}
 	formatter->flush(cout);
       }
-    } while (truncated);
+    } while (truncated && left > 0);
 
     formatter->close_section();
+
+    if (max_entries_specified) {
+      encode_json("truncated", truncated, formatter);
+      encode_json("count", count, formatter);
+      if (truncated) {
+        encode_json("marker", store->meta_mgr->get_marker(handle), formatter);
+      }
+      formatter->close_section();
+    }
     formatter->flush(cout);
 
     store->meta_mgr->list_keys_complete(handle);

@@ -14,9 +14,7 @@
 #include "common/errno.h"
 #include "ReplicatedBackend.h"
 #include "messages/MOSDOp.h"
-#include "messages/MOSDSubOp.h"
 #include "messages/MOSDRepOp.h"
-#include "messages/MOSDSubOpReply.h"
 #include "messages/MOSDRepOpReply.h"
 #include "messages/MOSDPGPush.h"
 #include "messages/MOSDPGPull.h"
@@ -210,14 +208,6 @@ bool ReplicatedBackend::_handle_message(
     do_push_reply(op);
     return true;
 
-  case MSG_OSD_SUBOP: {
-    const MOSDSubOp *m = static_cast<const MOSDSubOp*>(op->get_req());
-    if (m->ops.size() == 0) {
-      assert(0);
-    }
-    break;
-  }
-
   case MSG_OSD_REPOP: {
     do_repop(op);
     return true;
@@ -348,7 +338,6 @@ public:
 void generate_transaction(
   PGTransactionUPtr &pgt,
   const coll_t &coll,
-  bool legacy_log_entries,
   vector<pg_log_entry_t> &log_entries,
   ObjectStore::Transaction *t,
   set<hobject_t> *added,
@@ -518,7 +507,6 @@ void ReplicatedBackend::submit_transaction(
   generate_transaction(
     t,
     coll,
-    (get_osdmap()->require_osd_release < CEPH_RELEASE_KRAKEN),
     log_entries,
     &op_t,
     &added,
@@ -715,8 +703,11 @@ void ReplicatedBackend::be_deep_scrub(
   bufferlist bl, hdrbl;
   int r;
   __u64 pos = 0;
+  bool skip_data_digest = store->has_builtin_csum() &&
+    g_conf->get_val<bool>("osd_skip_data_digest");
 
-  uint32_t fadvise_flags = CEPH_OSD_OP_FLAG_FADVISE_SEQUENTIAL | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
+  uint32_t fadvise_flags = CEPH_OSD_OP_FLAG_FADVISE_SEQUENTIAL |
+                           CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
 
   while (true) {
     handle.reset_tp_timeout();
@@ -730,7 +721,9 @@ void ReplicatedBackend::be_deep_scrub(
     if (r <= 0)
       break;
 
-    h << bl;
+    if (!skip_data_digest) {
+      h << bl;
+    }
     pos += bl.length();
     bl.clear();
   }
@@ -740,8 +733,10 @@ void ReplicatedBackend::be_deep_scrub(
     o.read_error = true;
     return;
   }
-  o.digest = h.digest();
-  o.digest_present = true;
+  if (!skip_data_digest) {
+    o.digest = h.digest();
+    o.digest_present = true;
+  }
 
   bl.clear();
   r = store->omap_get_header(
@@ -2121,7 +2116,7 @@ bool ReplicatedBackend::handle_push_reply(
 	pi->recovery_progress, &new_progress, reply,
 	&(pi->stat));
       // Handle the case of a read error right after we wrote, which is
-      // hopefuilly extremely rare.
+      // hopefully extremely rare.
       if (r < 0) {
         dout(5) << __func__ << ": oid " << soid << " error " << r << dendl;
 

@@ -129,6 +129,12 @@ int RGWGetObj_ObjStore_S3::get_params()
   // all of the data from its parts. the parts will sync as separate objects
   skip_manifest = s->info.args.exists(RGW_SYS_PARAM_PREFIX "sync-manifest");
 
+  // multisite sync requests should fetch encrypted data, along with the
+  // attributes needed to support decryption on the other zone
+  if (s->system_request) {
+    skip_decrypt = s->info.args.exists(RGW_SYS_PARAM_PREFIX "skip-decrypt");
+  }
+
   return RGWGetObj_ObjStore::get_params();
 }
 
@@ -337,6 +343,10 @@ send_data:
 
 int RGWGetObj_ObjStore_S3::get_decrypt_filter(std::unique_ptr<RGWGetDataCB> *filter, RGWGetDataCB* cb, bufferlist* manifest_bl)
 {
+  if (skip_decrypt) { // bypass decryption for multisite sync requests
+    return 0;
+  }
+
   int res = 0;
   std::unique_ptr<BlockCrypt> block_crypt;
   res = rgw_s3_prepare_decrypt(s, attrs, &block_crypt, crypt_http_responses);
@@ -952,7 +962,7 @@ void RGWSetBucketVersioning_ObjStore_S3::send_response()
   if (op_ret)
     set_req_state_err(s, op_ret);
   dump_errno(s);
-  end_header(s);
+  end_header(s, this, "application/xml");
 }
 
 int RGWSetBucketWebsite_ObjStore_S3::get_params()
@@ -1004,7 +1014,7 @@ void RGWSetBucketWebsite_ObjStore_S3::send_response()
   if (op_ret < 0)
     set_req_state_err(s, op_ret);
   dump_errno(s);
-  end_header(s);
+  end_header(s, this, "application/xml");
 }
 
 void RGWDeleteBucketWebsite_ObjStore_S3::send_response()
@@ -1014,7 +1024,7 @@ void RGWDeleteBucketWebsite_ObjStore_S3::send_response()
   }
   set_req_state_err(s, op_ret);
   dump_errno(s);
-  end_header(s);
+  end_header(s, this, "application/xml");
 }
 
 void RGWGetBucketWebsite_ObjStore_S3::send_response()

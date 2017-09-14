@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # abort on failure
 set -e
@@ -106,7 +106,11 @@ overwrite_conf=1
 cephx=1 #turn cephx on by default
 cache=""
 memstore=0
-bluestore=0
+if [ `uname` = FreeBSD ]; then
+    bluestore=0
+else
+    bluestore=1
+fi
 rgw_frontend="civetweb"
 rgw_compression=""
 lockdep=${LOCKDEP:-1}
@@ -150,7 +154,8 @@ usage=$usage"\t--mgr_num specify ceph mgr count\n"
 usage=$usage"\t--rgw_port specify ceph rgw http listen port\n"
 usage=$usage"\t--rgw_frontend specify the rgw frontend configuration\n"
 usage=$usage"\t--rgw_compression specify the rgw compression plugin\n"
-usage=$usage"\t-b, --bluestore use bluestore as the osd objectstore backend\n"
+usage=$usage"\t-b, --bluestore use bluestore as the osd objectstore backend (default)\n"
+usage=$usage"\t-f, --filestore use filestore as the osd objectstore backend\n"
 usage=$usage"\t--memstore use memstore as the osd objectstore backend\n"
 usage=$usage"\t--cache <pool>: enable cache tiering on pool\n"
 usage=$usage"\t--short: short object names only; necessary for ext4 dev\n"
@@ -291,6 +296,9 @@ case $1 in
     -b | --bluestore )
 	    bluestore=1
 	    ;;
+    -f | --filestore )
+	    bluestore=0
+	    ;;
     --hitset )
 	    hitset="$hitset $2 $3"
 	    shift
@@ -360,12 +368,12 @@ fi
 ARGS="-c $conf_fn"
 
 prunb() {
-    echo "$* &"
+    printf "'%s' " "$@"; echo '&'
     "$@" &
 }
 
 prun() {
-    echo "$*"
+    printf "'%s' " "$@"; echo
     "$@"
 }
 
@@ -436,6 +444,7 @@ prepare_conf() {
         filestore fd cache size = 32
         run dir = $CEPH_OUT_DIR
         enable experimental unrecoverable data corrupting features = *
+$extra_conf
 EOF
 	if [ "$lockdep" -eq 1 ] ; then
 		wconf <<EOF
@@ -464,7 +473,7 @@ EOF
         keyring = $keyring_fn
         log file = $CEPH_OUT_DIR/\$name.\$pid.log
         admin socket = $CEPH_ASOK_DIR/\$name.\$pid.asok
-
+$extra_conf
 [client.rgw]
 
 [mds]
@@ -516,7 +525,7 @@ $COSDMEMSTORE
 $COSDSHORT
 $extra_conf
 [mon]
-        mgr initial modules = restful status dashboard
+        mgr initial modules = restful status dashboard balancer
         mon pg warn min per osd = 3
         mon osd allow primary affinity = true
         mon reweight min pgs per osd = 4
@@ -527,8 +536,6 @@ $DAEMONOPTS
 $CMONDEBUG
 $extra_conf
         mon cluster log file = $CEPH_OUT_DIR/cluster.mon.\$id.log
-[global]
-$extra_conf
 EOF
 }
 

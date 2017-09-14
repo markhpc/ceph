@@ -67,6 +67,7 @@ using ceph::crypto::MD5;
 #define RGW_ATTR_EXPIRES	RGW_ATTR_PREFIX "expires"
 #define RGW_ATTR_DELETE_AT 	RGW_ATTR_PREFIX "delete_at"
 #define RGW_ATTR_ID_TAG    	RGW_ATTR_PREFIX "idtag"
+#define RGW_ATTR_TAIL_TAG    	RGW_ATTR_PREFIX "tail_tag"
 #define RGW_ATTR_SHADOW_OBJ    	RGW_ATTR_PREFIX "shadow_name"
 #define RGW_ATTR_MANIFEST    	RGW_ATTR_PREFIX "manifest"
 #define RGW_ATTR_USER_MANIFEST  RGW_ATTR_PREFIX "user_manifest"
@@ -385,7 +386,7 @@ class RGWEnv;
 class RGWConf {
   friend class RGWEnv;
 protected:
-  void init(CephContext *cct, RGWEnv* env);
+  void init(CephContext *cct);
 public:
   RGWConf()
     : enable_ops_log(1),
@@ -436,6 +437,7 @@ enum RGWOpType {
   RGW_OP_STAT_ACCOUNT,
   RGW_OP_LIST_BUCKET,
   RGW_OP_GET_BUCKET_LOGGING,
+  RGW_OP_GET_BUCKET_LOCATION,
   RGW_OP_GET_BUCKET_VERSIONING,
   RGW_OP_SET_BUCKET_VERSIONING,
   RGW_OP_GET_BUCKET_WEBSITE,
@@ -1206,7 +1208,7 @@ struct RGWBucketInfo
   bool has_website;
   RGWBucketWebsiteConf website_conf;
 
-  RGWBucketIndexType index_type;
+  RGWBucketIndexType index_type = RGWBIType_Normal;
 
   bool swift_versioning;
   string swift_ver_location;

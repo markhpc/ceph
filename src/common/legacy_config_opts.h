@@ -14,15 +14,11 @@
 
 /* note: no header guard */
 OPTION(host, OPT_STR) // "" means that ceph will use short hostname
-OPTION(fsid, OPT_UUID)
 OPTION(public_addr, OPT_ADDR)
 OPTION(public_bind_addr, OPT_ADDR)
 OPTION(cluster_addr, OPT_ADDR)
 OPTION(public_network, OPT_STR)
 OPTION(cluster_network, OPT_STR)
-OPTION(monmap, OPT_STR)
-OPTION(mon_host, OPT_STR)
-OPTION(mon_dns_srv_name, OPT_STR)
 OPTION(lockdep, OPT_BOOL)
 OPTION(lockdep_force_backtrace, OPT_BOOL) // always gather current backtrace at every lock
 OPTION(run_dir, OPT_STR)       // the "/var/run/ceph" dir, created on daemon startup
@@ -223,8 +219,6 @@ OPTION(mon_osd_min_in_ratio, OPT_DOUBLE)   // min osds required to be in to mark
 OPTION(mon_osd_warn_op_age, OPT_DOUBLE)     // max op age before we generate a warning (make it a power of 2)
 OPTION(mon_osd_err_op_age_ratio, OPT_DOUBLE)  // when to generate an error, as multiple of mon_osd_warn_op_age
 OPTION(mon_osd_max_split_count, OPT_INT) // largest number of PGs per "involved" OSD to let split create
-OPTION(mon_osd_allow_primary_temp, OPT_BOOL)  // allow primary_temp to be set in the osdmap
-OPTION(mon_osd_allow_primary_affinity, OPT_BOOL)  // allow primary_affinity to be set in the osdmap
 OPTION(mon_osd_prime_pg_temp, OPT_BOOL)  // prime osdmap with pg mapping changes
 OPTION(mon_osd_prime_pg_temp_max_time, OPT_FLOAT)  // max time to spend priming
 OPTION(mon_osd_prime_pg_temp_max_estimate, OPT_FLOAT) // max estimate of pg total before we do all pgs in parallel
@@ -312,7 +306,7 @@ OPTION(mon_debug_deprecated_as_obsolete, OPT_BOOL) // consider deprecated comman
 OPTION(mon_debug_dump_transactions, OPT_BOOL)
 OPTION(mon_debug_dump_json, OPT_BOOL)
 OPTION(mon_debug_dump_location, OPT_STR)
-OPTION(mon_debug_no_require_luminous, OPT_BOOL)
+OPTION(mon_debug_no_require_mimic, OPT_BOOL)
 OPTION(mon_debug_no_require_bluestore_for_ec_overwrites, OPT_BOOL)
 OPTION(mon_debug_no_initial_persistent_features, OPT_BOOL)
 OPTION(mon_inject_transaction_delay_max, OPT_DOUBLE)      // seconds
@@ -406,7 +400,6 @@ OPTION(fuse_debug, OPT_BOOL)
 OPTION(fuse_multithreaded, OPT_BOOL)
 OPTION(fuse_require_active_mds, OPT_BOOL) // if ceph_fuse requires active mds server
 OPTION(fuse_syncfs_on_mksnap, OPT_BOOL)
-OPTION(fuse_set_user_groups, OPT_BOOL) // if ceph_fuse fills in group lists or not
 
 OPTION(client_try_dentry_invalidate, OPT_BOOL) // the client should try to use dentry invaldation instead of remounting, on kernels it believes that will work for
 OPTION(client_die_on_failed_remount, OPT_BOOL)
@@ -439,8 +432,6 @@ OPTION(mds_data, OPT_STR)
 OPTION(mds_max_file_size, OPT_U64) // Used when creating new CephFS. Change with 'ceph mds set max_file_size <size>' afterwards
 // max xattr kv pairs size for each dir/file
 OPTION(mds_max_xattr_pairs_size, OPT_U32)
-OPTION(mds_cache_size, OPT_INT)
-OPTION(mds_cache_mid, OPT_FLOAT)
 OPTION(mds_max_file_recover, OPT_U32)
 OPTION(mds_dir_max_commit_size, OPT_INT) // MB
 OPTION(mds_dir_keys_per_op, OPT_INT)
@@ -460,7 +451,6 @@ OPTION(mds_recall_state_timeout, OPT_FLOAT)    // detect clients which aren't tr
 OPTION(mds_freeze_tree_timeout, OPT_FLOAT)    // detecting freeze tree deadlock
 OPTION(mds_session_autoclose, OPT_FLOAT) // autoclose idle session
 OPTION(mds_health_summarize_threshold, OPT_INT) // collapse N-client health metrics to a single 'many'
-OPTION(mds_health_cache_threshold, OPT_FLOAT) // warn on cache size if it exceeds mds_cache_size by this factor
 OPTION(mds_reconnect_timeout, OPT_FLOAT)  // seconds to wait for clients during mds restart
 	      //  make it (mds_session_timeout - mds_beacon_grace)
 OPTION(mds_tick_interval, OPT_FLOAT)
@@ -664,6 +654,7 @@ OPTION(osd_tier_default_cache_min_read_recency_for_promote, OPT_INT) // number o
 OPTION(osd_tier_default_cache_min_write_recency_for_promote, OPT_INT) // number of recent HitSets the object must appear in to be promoted (on write)
 OPTION(osd_tier_default_cache_hit_set_grade_decay_rate, OPT_INT)
 OPTION(osd_tier_default_cache_hit_set_search_last_n, OPT_INT)
+OPTION(osd_objecter_finishers, OPT_INT)
 
 OPTION(osd_map_dedup, OPT_BOOL)
 OPTION(osd_map_max_advance, OPT_INT) // make this < cache_size!
@@ -1036,8 +1027,6 @@ OPTION(bluestore_block_wal_size, OPT_U64) // rocksdb wal
 OPTION(bluestore_block_wal_create, OPT_BOOL)
 OPTION(bluestore_block_preallocate_file, OPT_BOOL) //whether preallocate space if block/db_path/wal_path is file rather that block device.
 OPTION(bluestore_csum_type, OPT_STR) // none|xxhash32|xxhash64|crc32c|crc32c_16|crc32c_8
-OPTION(bluestore_csum_min_block, OPT_U32)
-OPTION(bluestore_csum_max_block, OPT_U32)
 OPTION(bluestore_min_alloc_size, OPT_U32)
 OPTION(bluestore_min_alloc_size_hdd, OPT_U32)
 OPTION(bluestore_min_alloc_size_ssd, OPT_U32)
@@ -1537,6 +1526,9 @@ OPTION(rgw_sync_log_trim_interval, OPT_INT) // time in seconds between attempts 
 
 OPTION(rgw_sync_data_inject_err_probability, OPT_DOUBLE) // range [0, 1]
 OPTION(rgw_sync_meta_inject_err_probability, OPT_DOUBLE) // range [0, 1]
+OPTION(rgw_sync_trace_history_size, OPT_INT) // max number of complete sync trace entries to keep
+OPTION(rgw_sync_trace_per_node_log_size, OPT_INT) // how many log entries to keep per node
+OPTION(rgw_sync_trace_servicemap_update_interval, OPT_INT) // interval in seconds between sync trace servicemap update
 
 
 OPTION(rgw_period_push_interval, OPT_DOUBLE) // seconds to wait before retrying "period push"

@@ -47,7 +47,7 @@ Synopsis
 
 | **ceph** **osd** **tier** [ *add* \| *add-cache* \| *cache-mode* \| *remove* \| *remove-overlay* \| *set-overlay* ] ...
 
-| **ceph** **pg** [ *debug* \| *deep-scrub* \| *dump* \| *dump_json* \| *dump_pools_json* \| *dump_stuck* \| *force_create_pg* \| *getmap* \| *ls* \| *ls-by-osd* \| *ls-by-pool* \| *ls-by-primary* \| *map* \| *repair* \| *scrub* \| *set_full_ratio* \| *set_nearfull_ratio* \| *stat* ] ...
+| **ceph** **pg** [ *debug* \| *deep-scrub* \| *dump* \| *dump_json* \| *dump_pools_json* \| *dump_stuck* \| *getmap* \| *ls* \| *ls-by-osd* \| *ls-by-pool* \| *ls-by-primary* \| *map* \| *repair* \| *scrub* \| *stat* ] ...
 
 | **ceph** **quorum** [ *enter* \| *exit* ]
 
@@ -560,17 +560,19 @@ Usage::
 
 	ceph osd create {<uuid>} {<id>}
 
-Subcommand ``new`` reuses a previously destroyed OSD *id*. The new OSD will
-have the specified *uuid*, and the command expects a JSON file containing
-the base64 cephx key for auth entity *client.osd.<id>*, as well as optional
-base64 cepx key for dm-crypt lockbox access and a dm-crypt key. Specifying
-a dm-crypt requires specifying the accompanying lockbox cephx key.
+Subcommand ``new`` can be used to create a new OSD or to recreate a previously
+destroyed OSD with a specific *id*. The new OSD will have the specified *uuid*,
+and the command expects a JSON file containing the base64 cephx key for auth
+entity *client.osd.<id>*, as well as optional base64 cepx key for dm-crypt
+lockbox access and a dm-crypt key. Specifying a dm-crypt requires specifying
+the accompanying lockbox cephx key.
 
 Usage::
 
-    ceph osd new {<id>} {<uuid>} -i {<secrets.json>}
+    ceph osd new {<uuid>} {<id>} -i {<secrets.json>}
 
-The secrets JSON file is expected to maintain a form of the following format::
+The secrets JSON file is optional but if provided, is expected to maintain
+a form of the following format::
 
     {
         "cephx_secret": "AQBWtwhZdBO5ExAAIDyjK2Bh16ZXylmzgYYEjg=="
@@ -1321,25 +1323,6 @@ Subcommand ``scrub`` starts scrub on <pgid>.
 Usage::
 
 	ceph pg scrub <pgid>
-
-Subcommand ``set_full_ratio`` sets ratio at which pgs are considered full.
-
-Usage::
-
-	ceph pg set_full_ratio <float[0.0-1.0]>
-
-Subcommand ``set_backfillfull_ratio`` sets ratio at which pgs are considered too full to backfill.
-
-Usage::
-
-	ceph pg set_backfillfull_ratio <float[0.0-1.0]>
-
-Subcommand ``set_nearfull_ratio`` sets ratio at which pgs are considered nearly
-full.
-
-Usage::
-
-	ceph pg set_nearfull_ratio <float[0.0-1.0]>
 
 Subcommand ``stat`` shows placement group status.
 

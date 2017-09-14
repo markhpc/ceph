@@ -118,22 +118,6 @@
  * to any guidelines regarding deprecating commands.
  */
 
-/*
- * pg commands PGMonitor.cc
- */
-
-// note: this should be replaced shortly!
-COMMAND_WITH_FLAG("pg force_create_pg name=pgid,type=CephPgid", \
-		  "force creation of pg <pgid>", "pg", "rw", "cli,rest",
-		  FLAG(DEPRECATED))
-COMMAND_WITH_FLAG("pg set_full_ratio name=ratio,type=CephFloat,range=0.0|1.0", \
-		  "set ratio at which pgs are considered full", \
-		  "pg", "rw", "cli,rest", FLAG(DEPRECATED))
-COMMAND_WITH_FLAG("pg set_nearfull_ratio "				\
-		  "name=ratio,type=CephFloat,range=0.0|1.0",		\
-		  "set ratio at which pgs are considered nearly full",	\
-		  "pg", "rw", "cli,rest", FLAG(DEPRECATED))
-
 COMMAND("pg map name=pgid,type=CephPgid", "show mapping of pg to osds", \
 	"pg", "r", "cli,rest")
 COMMAND("osd last-stat-seq name=id,type=CephOsdName", \
@@ -199,7 +183,7 @@ COMMAND("auth rm " \
 /*
  * Monitor commands (Monitor.cc)
  */
-COMMAND_WITH_FLAG("compact", "cause compaction of monitor's leveldb storage", \
+COMMAND_WITH_FLAG("compact", "cause compaction of monitor's leveldb/rocksdb storage", \
 	     "mon", "rw", "cli,rest", \
              FLAG(NOFORWARD)|FLAG(DEPRECATED))
 COMMAND_WITH_FLAG("scrub", "scrub the monitor stores", \
@@ -264,7 +248,7 @@ COMMAND("node ls " \
  * Monitor-specific commands under module 'mon'
  */
 COMMAND_WITH_FLAG("mon compact", \
-    "cause compaction of monitor's leveldb storage", \
+    "cause compaction of monitor's leveldb/rocksdb storage", \
     "mon", "rw", "cli,rest", \
     FLAG(NOFORWARD))
 COMMAND_WITH_FLAG("mon scrub",
@@ -509,6 +493,10 @@ COMMAND("osd lspools " \
 COMMAND_WITH_FLAG("osd crush rule list", "list crush rules", "osd", "r", "cli,rest",
 		  FLAG(DEPRECATED))
 COMMAND("osd crush rule ls", "list crush rules", "osd", "r", "cli,rest")
+COMMAND("osd crush rule ls-by-class " \
+        "name=class,type=CephString,goodchars=[A-Za-z0-9-_.]", \
+        "list all crush rules that reference the same <class>", \
+        "osd", "r", "cli,rest")
 COMMAND("osd crush rule dump " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.],req=false", \
 	"dump crush rule <name> (default all)", \
@@ -524,8 +512,10 @@ COMMAND("osd crush set name=prior_version,type=CephInt,req=false", \
 	"osd", "rw", "cli,rest")
 COMMAND("osd crush add-bucket " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] " \
-	"name=type,type=CephString", \
-	"add no-parent (probably root) crush bucket <name> of type <type>", \
+        "name=type,type=CephString " \
+        "name=args,type=CephString,n=N,goodchars=[A-Za-z0-9-_.=],req=false", \
+	"add no-parent (probably root) crush bucket <name> of type <type> " \
+        "to location <args>", \
 	"osd", "rw", "cli,rest")
 COMMAND("osd crush rename-bucket " \
 	"name=srcname,type=CephString,goodchars=[A-Za-z0-9-_.] " \
@@ -646,6 +636,11 @@ COMMAND("osd crush rule create-erasure " \
 COMMAND("osd crush rule rm " \
 	"name=name,type=CephString,goodchars=[A-Za-z0-9-_.] ",	\
 	"remove crush rule <name>", "osd", "rw", "cli,rest")
+COMMAND("osd crush rule rename " \
+        "name=srcname,type=CephString,goodchars=[A-Za-z0-9-_.] "  \
+        "name=dstname,type=CephString,goodchars=[A-Za-z0-9-_.]",  \
+        "rename crush rule <srcname> to <dstname>",
+        "osd", "rw", "cli,rest")
 COMMAND("osd crush tree "
         "name=shadow,type=CephChoices,strings=--show-shadow,req=false", \
 	"dump crush buckets and items in a tree view",
@@ -736,7 +731,7 @@ COMMAND("osd unset " \
 	"name=key,type=CephChoices,strings=full|pause|noup|nodown|noout|noin|nobackfill|norebalance|norecover|noscrub|nodeep-scrub|notieragent", \
 	"unset <key>", "osd", "rw", "cli,rest")
 COMMAND("osd require-osd-release "\
-	"name=release,type=CephChoices,strings=luminous",
+	"name=release,type=CephChoices,strings=luminous|mimic",
 	"set the minimum allowed OSD release to participate in the cluster",
 	"osd", "rw", "cli,rest")
 COMMAND("osd cluster_snap", "take cluster snapshot (disabled)", \
@@ -972,6 +967,12 @@ COMMAND("osd pool application rm " \
         "name=key,type=CephString",
         "removes application <app> metadata key <key> on pool <poolname>",
         "osd", "rw", "cli,rest")
+COMMAND("osd pool application get " \
+        "name=pool,type=CephPoolname,req=fasle " \
+        "name=app,type=CephString,req=false " \
+        "name=key,type=CephString,req=false",
+        "get value of key <key> of application <app> on pool <poolname>",
+        "osd", "r", "cli,rest")
 COMMAND("osd utilization",
 	"get basic pg distribution stats",
 	"osd", "r", "cli,rest")

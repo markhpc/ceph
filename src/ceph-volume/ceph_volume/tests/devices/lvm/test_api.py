@@ -24,58 +24,69 @@ class TestParseTags(object):
 class TestGetAPIVgs(object):
 
     def test_report_is_emtpy(self, monkeypatch):
-        monkeypatch.setattr(api.process, 'call', lambda x: ('{}', '', 0))
+        monkeypatch.setattr(api.process, 'call', lambda x: ('\n\n', '', 0))
         assert api.get_api_vgs() == []
 
     def test_report_has_stuff(self, monkeypatch):
-        report = '{"report":[{"vg":[{"vg_name":"VolGroup00"}]}]}'
+        report = ['  VolGroup00']
         monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
         assert api.get_api_vgs() == [{'vg_name': 'VolGroup00'}]
+
+    def test_report_has_stuff_with_empty_attrs(self, monkeypatch):
+        report = ['  VolGroup00 ;;;;;;9g']
+        monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
+        result = api.get_api_vgs()[0]
+        assert len(result.keys()) == 7
+        assert result['vg_name'] == 'VolGroup00'
+        assert result['vg_free'] == '9g'
 
     def test_report_has_multiple_items(self, monkeypatch):
-        report = '{"report":[{"vg":[{"vg_name":"VolGroup00"},{"vg_name":"ceph_vg"}]}]}'
+        report = ['   VolGroup00;;;;;;;', '    ceph_vg;;;;;;;']
         monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
-        assert api.get_api_vgs() == [{'vg_name': 'VolGroup00'}, {'vg_name': 'ceph_vg'}]
-
-    def test_does_not_get_poluted_with_non_vg_items(self, monkeypatch):
-        report = '{"report":[{"vg":[{"vg_name":"VolGroup00"}],"lv":[{"lv":"1"}]}]}'
-        monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
-        assert api.get_api_vgs() == [{'vg_name': 'VolGroup00'}]
+        result = api.get_api_vgs()
+        assert result[0]['vg_name'] == 'VolGroup00'
+        assert result[1]['vg_name'] == 'ceph_vg'
 
 
 class TestGetAPILvs(object):
 
     def test_report_is_emtpy(self, monkeypatch):
-        monkeypatch.setattr(api.process, 'call', lambda x: ('{}', '', 0))
+        monkeypatch.setattr(api.process, 'call', lambda x: ('', '', 0))
         assert api.get_api_lvs() == []
 
     def test_report_has_stuff(self, monkeypatch):
-        report = '{"report":[{"lv":[{"lv_name":"VolGroup00"}]}]}'
+        report = ['  ;/path;VolGroup00;root']
         monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
-        assert api.get_api_lvs() == [{'lv_name': 'VolGroup00'}]
+        result = api.get_api_lvs()
+        assert result[0]['lv_name'] == 'VolGroup00'
 
     def test_report_has_multiple_items(self, monkeypatch):
-        report = '{"report":[{"lv":[{"lv_name":"VolName"},{"lv_name":"ceph_lv"}]}]}'
+        report = ['  ;/path;VolName;root', ';/dev/path;ceph_lv;ceph_vg']
         monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
-        assert api.get_api_lvs() == [{'lv_name': 'VolName'}, {'lv_name': 'ceph_lv'}]
-
-    def test_does_not_get_poluted_with_non_lv_items(self, monkeypatch):
-        report = '{"report":[{"lv":[{"lv_name":"VolName"}],"vg":[{"vg":"1"}]}]}'
-        monkeypatch.setattr(api.process, 'call', lambda x: (report, '', 0))
-        assert api.get_api_lvs() == [{'lv_name': 'VolName'}]
+        result = api.get_api_lvs()
+        assert result[0]['lv_name'] == 'VolName'
+        assert result[1]['lv_name'] == 'ceph_lv'
 
 
 @pytest.fixture
 def volumes(monkeypatch):
-    monkeypatch.setattr(process, 'call', lambda x: ('{}', '', 0))
+    monkeypatch.setattr(process, 'call', lambda x: ('', '', 0))
     volumes = api.Volumes()
     volumes._purge()
     return volumes
 
 
 @pytest.fixture
+def pvolumes(monkeypatch):
+    monkeypatch.setattr(process, 'call', lambda x: ('', '', 0))
+    pvolumes = api.PVolumes()
+    pvolumes._purge()
+    return pvolumes
+
+
+@pytest.fixture
 def volume_groups(monkeypatch):
-    monkeypatch.setattr(process, 'call', lambda x: ('{}', '', 0))
+    monkeypatch.setattr(process, 'call', lambda x: ('', '', 0))
     vgs = api.VolumeGroups()
     vgs._purge()
     return vgs
@@ -92,6 +103,62 @@ class TestGetLV(object):
         volumes.append(FooVolume)
         monkeypatch.setattr(api, 'Volumes', lambda: volumes)
         assert api.get_lv(lv_name='foo') == FooVolume
+
+    def test_single_lv_is_matched_by_uuid(self, volumes, monkeypatch):
+        FooVolume = api.Volume(
+            lv_name='foo', lv_path='/dev/vg/foo',
+            lv_uuid='1111', lv_tags="ceph.type=data")
+        volumes.append(FooVolume)
+        monkeypatch.setattr(api, 'Volumes', lambda: volumes)
+        assert api.get_lv(lv_uuid='1111') == FooVolume
+
+
+class TestGetPV(object):
+
+    def test_nothing_is_passed_in(self):
+        # so we return a None
+        assert api.get_pv() is None
+
+    def test_single_pv_is_not_matched(self, pvolumes, monkeypatch):
+        FooPVolume = api.PVolume(pv_name='/dev/sda', pv_uuid="0000", pv_tags={})
+        pvolumes.append(FooPVolume)
+        monkeypatch.setattr(api, 'PVolumes', lambda: pvolumes)
+        assert api.get_pv(pv_uuid='foo') is None
+
+    def test_single_pv_is_matched(self, pvolumes, monkeypatch):
+        FooPVolume = api.PVolume(pv_name='/dev/sda', pv_uuid="0000", pv_tags={})
+        pvolumes.append(FooPVolume)
+        monkeypatch.setattr(api, 'PVolumes', lambda: pvolumes)
+        assert api.get_pv(pv_uuid='0000') == FooPVolume
+
+    def test_single_pv_is_matched_by_uuid(self, pvolumes, monkeypatch):
+        FooPVolume = api.PVolume(
+            pv_name='/dev/vg/foo',
+            pv_uuid='1111', pv_tags="ceph.type=data")
+        pvolumes.append(FooPVolume)
+        monkeypatch.setattr(api, 'PVolumes', lambda: pvolumes)
+        assert api.get_pv(pv_uuid='1111') == FooPVolume
+
+
+class TestPVolumes(object):
+
+    def test_filter_by_tag_does_not_match_one(self, pvolumes, monkeypatch):
+        pv_tags = "ceph.type=journal,ceph.osd_id=1,ceph.fsid=000-aaa"
+        FooPVolume = api.PVolume(
+            pv_name='/dev/vg/foo',
+            pv_uuid='1111', pv_tags=pv_tags)
+        pvolumes.append(FooPVolume)
+        pvolumes.filter(pv_tags={'ceph.type': 'journal', 'ceph.osd_id': '2'})
+        assert pvolumes == []
+
+    def test_filter_by_tags_matches(self, pvolumes, monkeypatch):
+        pv_tags = "ceph.type=journal,ceph.osd_id=1"
+        FooPVolume = api.PVolume(
+            pv_name='/dev/vg/foo',
+            pv_uuid='1111', pv_tags=pv_tags)
+        pvolumes.append(FooPVolume)
+        pvolumes.filter(pv_tags={'ceph.type': 'journal', 'ceph.osd_id': '1'})
+        assert pvolumes == [FooPVolume]
 
 
 class TestGetVG(object):
@@ -139,6 +206,16 @@ class TestVolumes(object):
         assert len(volumes) == 1
         assert volumes[0].lv_name == 'volume1'
 
+    def test_filter_by_tag_does_not_match_one(self, volumes):
+        lv_tags = "ceph.type=data,ceph.fsid=000-aaa"
+        osd = api.Volume(lv_name='volume1', lv_path='/dev/vg/lv', lv_tags=lv_tags)
+        journal = api.Volume(lv_name='volume2', lv_path='/dev/vg/lv', lv_tags='ceph.osd_id=1,ceph.type=journal')
+        volumes.append(osd)
+        volumes.append(journal)
+        # note the different osd_id!
+        volumes.filter(lv_tags={'ceph.type': 'data', 'ceph.osd_id': '2'})
+        assert volumes == []
+
     def test_filter_by_vg_name(self, volumes):
         lv_tags = "ceph.type=data,ceph.fsid=000-aaa"
         osd = api.Volume(lv_name='volume1', vg_name='ceph_vg', lv_tags=lv_tags)
@@ -157,6 +234,23 @@ class TestVolumes(object):
         volumes.filter(lv_path='/dev/volume1')
         assert len(volumes) == 1
         assert volumes[0].lv_name == 'volume1'
+
+    def test_filter_by_lv_uuid(self, volumes):
+        osd = api.Volume(lv_name='volume1', lv_path='/dev/volume1', lv_uuid='1111', lv_tags='')
+        journal = api.Volume(lv_name='volume2', lv_path='/dev/volume2', lv_uuid='', lv_tags='')
+        volumes.append(osd)
+        volumes.append(journal)
+        volumes.filter(lv_uuid='1111')
+        assert len(volumes) == 1
+        assert volumes[0].lv_name == 'volume1'
+
+    def test_filter_by_lv_uuid_nothing_found(self, volumes):
+        osd = api.Volume(lv_name='volume1', lv_path='/dev/volume1', lv_uuid='1111', lv_tags='')
+        journal = api.Volume(lv_name='volume2', lv_path='/dev/volume2', lv_uuid='', lv_tags='')
+        volumes.append(osd)
+        volumes.append(journal)
+        volumes.filter(lv_uuid='22222')
+        assert volumes == []
 
     def test_filter_requires_params(self, volumes):
         with pytest.raises(TypeError):
@@ -194,6 +288,13 @@ class TestVolumeGroups(object):
         volume_groups.filter(vg_tags={'ceph.group': 'dmcache'})
         assert len(volume_groups) == 1
         assert volume_groups[0].vg_name == 'volume1'
+
+    def test_filter_by_tag_does_not_match_one(self, volume_groups):
+        vg_tags = "ceph.group=dmcache,ceph.disk_type=ssd"
+        osd = api.VolumeGroup(vg_name='volume1', vg_path='/dev/vg/lv', vg_tags=vg_tags)
+        volume_groups.append(osd)
+        volume_groups.filter(vg_tags={'ceph.group': 'data', 'ceph.disk_type': 'ssd'})
+        assert volume_groups == []
 
     def test_filter_by_vg_name(self, volume_groups):
         vg_tags = "ceph.type=data,ceph.fsid=000-aaa"

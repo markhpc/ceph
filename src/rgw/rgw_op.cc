@@ -495,6 +495,8 @@ int rgw_build_bucket_policies(RGWRados* store, struct req_state* s)
        */
       if (store->get_zonegroup().is_master_zonegroup() && s->system_request) {
         /*If this is the master, don't redirect*/
+      } else if (s->op_type == RGW_OP_GET_BUCKET_LOCATION ) {
+        /* If op is get bucket location, don't redirect */
       } else if (!s->local_source ||
           (s->op != OP_PUT && s->op != OP_COPY) ||
           s->object.empty()) {
@@ -720,6 +722,12 @@ void RGWGetObjTags::execute()
   store->set_atomic(s->obj_ctx, obj);
 
   op_ret = get_obj_attrs(store, s, obj, attrs);
+  if (op_ret < 0) {
+    ldout(s->cct, 0) << "ERROR: failed to get obj attrs, obj=" << obj
+		     << " ret=" << op_ret << dendl;
+    return;
+  }
+
   auto tags = attrs.find(RGW_ATTR_TAGS);
   if(tags != attrs.end()){
     has_tags = true;
@@ -3024,6 +3032,7 @@ int RGWPutObjProcessor_Multipart::do_complete(size_t accounted_size,
   head_obj_op.meta.owner = s->owner.get_id();
   head_obj_op.meta.delete_at = delete_at;
   head_obj_op.meta.zones_trace = zones_trace;
+  head_obj_op.meta.modify_tail = true;
 
   int r = head_obj_op.write_meta(obj_len, accounted_size, attrs);
   if (r < 0)
@@ -4498,7 +4507,7 @@ int RGWGetACLs::verify_permission()
 				    rgw::IAM::s3GetObjectAcl :
 				    rgw::IAM::s3GetObjectVersionAcl);
   } else {
-    perm = verify_bucket_permission(s, rgw::IAM::s3GetObjectAcl);
+    perm = verify_bucket_permission(s, rgw::IAM::s3GetBucketAcl);
   }
   if (!perm)
     return -EACCES;
@@ -4836,7 +4845,12 @@ void RGWDeleteLC::execute()
       }
     }
   op_ret = rgw_bucket_set_attrs(store, s->bucket_info, attrs, &s->bucket_info.objv_tracker);
-  string shard_id = s->bucket.name + ':' +s->bucket.bucket_id;
+  if (op_ret < 0) {
+    ldout(s->cct, 0) << "RGWLC::RGWDeleteLC() failed to set attrs on bucket=" << s->bucket.name
+            << " returned err=" << op_ret << dendl;
+    return;
+  }
+  string shard_id = s->bucket.tenant + ':' + s->bucket.name + ':' + s->bucket.bucket_id;
   pair<string, int> entry(shard_id, lc_uninitial);
   string oid; 
   get_lc_oid(s, oid);
@@ -5451,6 +5465,7 @@ void RGWCompleteMultipart::execute()
   obj_op.meta.ptag = &s->req_id; /* use req_id as operation tag */
   obj_op.meta.owner = s->owner.get_id();
   obj_op.meta.flags = PUT_OBJ_CREATE;
+  obj_op.meta.modify_tail = true;
   op_ret = obj_op.write_meta(ofs, accounted_size, attrs);
   if (op_ret < 0)
     return;

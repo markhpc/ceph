@@ -357,7 +357,8 @@ private:
 		       ostream *ss);
   int prepare_new_pool(MonOpRequestRef op);
 
-  void update_pool_flags(int64_t pool_id, uint64_t flags);
+  void set_pool_flags(int64_t pool_id, uint64_t flags);
+  void clear_pool_flags(int64_t pool_id, uint64_t flags);
   bool update_pools_status();
 
   bool prepare_set_flag(MonOpRequestRef op, int flag);
@@ -473,9 +474,6 @@ public:
 
   void tick() override;  // check state, take actions
 
-  void get_health(list<pair<health_status_t,string> >& summary,
-		  list<pair<health_status_t,string> > *detail,
-		  CephContext *cct) const override;
   bool preprocess_command(MonOpRequestRef op);
   bool prepare_command(MonOpRequestRef op);
   bool prepare_command_impl(MonOpRequestRef op, map<string,cmd_vartype>& cmdmap);

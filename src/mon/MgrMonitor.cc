@@ -17,7 +17,6 @@
 #include "messages/MMgrMap.h"
 #include "messages/MMgrDigest.h"
 
-#include "PGStatService.h"
 #include "include/stringify.h"
 #include "mgr/MgrContext.h"
 #include "mgr/mgr_commands.h"
@@ -332,7 +331,7 @@ bool MgrMonitor::prepare_beacon(MonOpRequestRef op)
   } else if (pending_map.active_gid == 0) {
     // There is no currently active daemon, select this one.
     if (pending_map.standbys.count(m->get_gid())) {
-      drop_standby(m->get_gid());
+      drop_standby(m->get_gid(), false);
     }
     dout(4) << "selecting new active " << m->get_gid()
 	    << " " << m->get_name()
@@ -453,10 +452,11 @@ void MgrMonitor::send_digests()
     sub->session->con->send_message(mdigest);
   }
 
-  digest_event = new C_MonContext(mon, [this](int){
+  digest_event = mon->timer.add_event_after(
+    g_conf->mon_mgr_digest_period,
+    new C_MonContext(mon, [this](int) {
       send_digests();
-  });
-  mon->timer.add_event_after(g_conf->mon_mgr_digest_period, digest_event);
+  }));
 }
 
 void MgrMonitor::cancel_timer()
@@ -471,36 +471,6 @@ void MgrMonitor::on_active()
 {
   if (mon->is_leader()) {
     mon->clog->debug() << "mgrmap e" << map.epoch << ": " << map;
-  }
-}
-
-void MgrMonitor::get_health(
-  list<pair<health_status_t,string> >& summary,
-  list<pair<health_status_t,string> > *detail,
-  CephContext *cct) const
-{
-  // start mgr warnings as soon as the mons and osds are all upgraded,
-  // but before the require_luminous osdmap flag is set.  this way the
-  // user gets some warning before the osd flag is set and mgr is
-  // actually *required*.
-  if (!mon->monmap->get_required_features().contains_all(
-	ceph::features::mon::FEATURE_LUMINOUS) ||
-      !HAVE_FEATURE(mon->osdmon()->osdmap.get_up_osd_features(),
-		    SERVER_LUMINOUS)) {
-    return;
-  }
-
-  if (map.active_gid == 0) {
-    auto level = HEALTH_WARN;
-    // do not escalate to ERR if they are still upgrading to jewel.
-    if (mon->osdmon()->osdmap.require_osd_release >= CEPH_RELEASE_LUMINOUS) {
-      utime_t now = ceph_clock_now();
-      if (first_seen_inactive != utime_t() &&
-	  now - first_seen_inactive > g_conf->mon_mgr_inactive_grace) {
-	level = HEALTH_ERR;
-      }
-    }
-    summary.push_back(make_pair(level, "no active mgr"));
   }
 }
 
@@ -599,7 +569,8 @@ bool MgrMonitor::promote_standby()
     pending_map.available = false;
     pending_map.active_addr = entity_addr_t();
 
-    drop_standby(replacement_gid);
+    drop_standby(replacement_gid, false);
+
     return true;
   } else {
     return false;
@@ -624,10 +595,12 @@ void MgrMonitor::drop_active()
   cancel_timer();
 }
 
-void MgrMonitor::drop_standby(uint64_t gid)
+void MgrMonitor::drop_standby(uint64_t gid, bool drop_meta)
 {
-  pending_metadata_rm.insert(pending_map.standbys[gid].name);
-  pending_metadata.erase(pending_map.standbys[gid].name);
+  if (drop_meta) {
+    pending_metadata_rm.insert(pending_map.standbys[gid].name);
+    pending_metadata.erase(pending_map.standbys[gid].name);
+  }
   pending_map.standbys.erase(gid);
   if (last_beacon.count(gid) > 0) {
     last_beacon.erase(gid);

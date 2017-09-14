@@ -33,58 +33,72 @@ int get_key(const po::variables_map &vm, std::string *key) {
   return 0;
 }
 
+const uint32_t MAX_KEYS = 64;
+
 } // anonymous namespace
 
 static int do_metadata_list(librbd::Image& image, Formatter *f)
 {
-  std::map<std::string, bufferlist> pairs;
   int r;
   TextTable tbl;
 
-  r = image.metadata_list("", 0, &pairs);
-  if (r < 0) {
-    std::cerr << "failed to list metadata of image : " << cpp_strerror(r)
-              << std::endl;
-    return r;
-  }
-
-  if (f) {
-    f->open_object_section("metadatas");
-  } else {
-    tbl.define_column("Key", TextTable::LEFT, TextTable::LEFT);
-    tbl.define_column("Value", TextTable::LEFT, TextTable::LEFT);
-  }
-
-  if (!pairs.empty()) {
-    bool one = (pairs.size() == 1);
-
-    if (!f) {
-      std::cout << "There " << (one ? "is " : "are ") << pairs.size()
-           << " metadata" << (one ? "" : "s") << " on this image.\n";
+  size_t count = 0;
+  std::string last_key;
+  bool more_results = true;
+  while (more_results) {
+    std::map<std::string, bufferlist> pairs;
+    r = image.metadata_list(last_key, MAX_KEYS, &pairs);
+    if (r < 0) {
+      std::cerr << "failed to list metadata of image : " << cpp_strerror(r)
+                << std::endl;
+      return r;
     }
 
-    for (std::map<std::string, bufferlist>::iterator it = pairs.begin();
-         it != pairs.end(); ++it) {
-      std::string val(it->second.c_str(), it->second.length());
-      if (f) {
-        f->dump_string(it->first.c_str(), val.c_str());
-      } else {
-        tbl << it->first << val.c_str() << TextTable::endrow;
+    more_results = (pairs.size() == MAX_KEYS);
+    if (!pairs.empty()) {
+      if (count == 0) {
+        if (f) {
+          f->open_object_section("metadatas");
+        } else {
+          tbl.define_column("Key", TextTable::LEFT, TextTable::LEFT);
+          tbl.define_column("Value", TextTable::LEFT, TextTable::LEFT);
+        }
+      }
+
+      last_key = pairs.rbegin()->first;
+      count += pairs.size();
+
+      for (auto kv : pairs) {
+        std::string val(kv.second.c_str(), kv.second.length());
+        if (f) {
+          f->dump_string(kv.first.c_str(), val.c_str());
+        } else {
+          tbl << kv.first << val << TextTable::endrow;
+        }
       }
     }
-    if (!f)
-      std::cout << tbl;
   }
 
-  if (f) {
-    f->close_section();
-    f->flush(std::cout);
+  if (f == nullptr) {
+    bool single = (count == 1);
+    std::cout << "There " << (single ? "is" : "are") << " " << count << " "
+              << (single ? "metadatum" : "metadata") << " on this image"
+              << (count == 0 ? "." : ":") << std::endl;
+  }
+
+  if (count > 0) {
+    if (f) {
+      f->close_section();
+      f->flush(std::cout);
+    } else {
+      std::cout << std::endl << tbl;
+    }
   }
   return 0;
 }
 
-static int do_metadata_set(librbd::Image& image, const char *key,
-                          const char *value)
+static int do_metadata_set(librbd::Image& image, std::string &key,
+                          std::string &value)
 {
   int r = image.metadata_set(key, value);
   if (r < 0) {
@@ -94,7 +108,7 @@ static int do_metadata_set(librbd::Image& image, const char *key,
   return r;
 }
 
-static int do_metadata_remove(librbd::Image& image, const char *key)
+static int do_metadata_remove(librbd::Image& image, std::string &key)
 {
   int r = image.metadata_remove(key);
   if (r == -ENOENT) {
@@ -107,7 +121,7 @@ static int do_metadata_remove(librbd::Image& image, const char *key)
   return r;
 }
 
-static int do_metadata_get(librbd::Image& image, const char *key)
+static int do_metadata_get(librbd::Image& image, std::string &key)
 {
   std::string s;
   int r = image.metadata_get(key, &s);
@@ -195,7 +209,7 @@ int execute_get(const po::variables_map &vm) {
     return r;
   }
 
-  r = do_metadata_get(image, key.c_str());
+  r = do_metadata_get(image, key);
   if (r < 0) {
     std::cerr << "rbd: getting metadata failed: " << cpp_strerror(r)
               << std::endl;
@@ -245,7 +259,7 @@ int execute_set(const po::variables_map &vm) {
     return r;
   }
 
-  r = do_metadata_set(image, key.c_str(), value.c_str());
+  r = do_metadata_set(image, key, value);
   if (r < 0) {
     std::cerr << "rbd: setting metadata failed: " << cpp_strerror(r)
               << std::endl;
@@ -287,7 +301,7 @@ int execute_remove(const po::variables_map &vm) {
     return r;
   }
 
-  r = do_metadata_remove(image, key.c_str());
+  r = do_metadata_remove(image, key);
   if (r < 0) {
     std::cerr << "rbd: removing metadata failed: " << cpp_strerror(r)
               << std::endl;

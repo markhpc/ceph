@@ -159,11 +159,11 @@ private:
   struct IOContext
   {
     xlist<IOContext*>::item item;
-    NBDServer *server;
+    NBDServer *server = nullptr;
     struct nbd_request request;
     struct nbd_reply reply;
     bufferlist data;
-    int command;
+    int command = 0;
 
     IOContext()
       : item(this)
@@ -233,7 +233,7 @@ private:
     if (ret == -EINVAL) {
       // if shrinking an image, a pagecache writeback might reference
       // extents outside of the range of the new image extents
-      dout(5) << __func__ << ": masking IO out-of-bounds error" << dendl;
+      dout(0) << __func__ << ": masking IO out-of-bounds error" << dendl;
       ctx->data.clear();
       ret = 0;
     }
@@ -246,7 +246,7 @@ private:
       ctx->data.append_zero(pad_byte_count);
       dout(20) << __func__ << ": " << *ctx << ": Pad byte count: "
                << pad_byte_count << dendl;
-      ctx->reply.error = 0;
+      ctx->reply.error = htonl(0);
     } else {
       ctx->reply.error = htonl(0);
     }
@@ -396,7 +396,7 @@ public:
     }
   }
 
-  void stop()
+  ~NBDServer()
   {
     if (started) {
       dout(10) << __func__ << ": terminating" << dendl;
@@ -410,11 +410,6 @@ public:
 
       started = false;
     }
-  }
-
-  ~NBDServer()
-  {
-    stop();
   }
 };
 
@@ -761,8 +756,6 @@ static int do_map(int argc, const char *argv[], Config *cfg)
       unregister_async_signal_handler(SIGINT, handle_signal);
       unregister_async_signal_handler(SIGTERM, handle_signal);
       shutdown_async_signal_handler();
-      
-      server.stop();
     }
 
     r = image.update_unwatch(handle);
@@ -924,14 +917,26 @@ static int do_list_mapped_devices()
 
 static int parse_args(vector<const char*>& args, std::ostream *err_msg, Config *cfg)
 {
-  std::vector<const char*>::iterator i;
-  std::ostringstream err;
+  std::string conf_file_list;
+  std::string cluster;
+  CephInitParameters iparams = ceph_argparse_early_args(
+          args, CEPH_ENTITY_TYPE_CLIENT, &cluster, &conf_file_list);
 
   md_config_t config;
-  config.parse_config_files(nullptr, nullptr, 0);
+  config.name = iparams.name;
+  config.cluster = cluster;
+
+  if (!conf_file_list.empty()) {
+    config.parse_config_files(conf_file_list.c_str(), nullptr, 0);
+  } else {
+    config.parse_config_files(nullptr, nullptr, 0);
+  }
   config.parse_env();
   config.parse_argv(args);
   cfg->poolname = config.get_val<std::string>("rbd_default_pool");
+
+  std::vector<const char*>::iterator i;
+  std::ostringstream err;
 
   for (i = args.begin(); i != args.end(); ) {
     if (ceph_argparse_flag(args, i, "-h", "--help", (char*)NULL)) {

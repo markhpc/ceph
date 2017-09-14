@@ -1136,12 +1136,13 @@ void BlueFS::_compact_log_sync()
   log_writer->append(bl);
   int r = _flush(log_writer, true);
   assert(r == 0);
-  wait_for_aio(log_writer);
-
-  list<aio_t> completed_ios;
-  _claim_completed_aios(log_writer, &completed_ios);
+  if (!cct->_conf->bluefs_sync_write) {
+    list<aio_t> completed_ios;
+    _claim_completed_aios(log_writer, &completed_ios);
+    wait_for_aio(log_writer);
+    completed_ios.clear();
+  }
   flush_bdev();
-  completed_ios.clear();
 
   dout(10) << __func__ << " writing super" << dendl;
   super.log_fnode = log_file->fnode;
@@ -1186,6 +1187,11 @@ void BlueFS::_compact_log_async(std::unique_lock<std::mutex>& l)
   assert(!new_log);
   assert(!new_log_writer);
 
+  // create a new log [writer] so that we know compaction is in progress
+  // (see _should_compact_log)
+  new_log = new File;
+  new_log->fnode.ino = 0;   // so that _flush_range won't try to log the fnode
+
   // 1. allocate new log space and jump to it.
   old_log_jump_to = log_file->fnode.get_allocated();
   uint64_t need = old_log_jump_to + cct->_conf->bluefs_max_log_runway;
@@ -1227,9 +1233,7 @@ void BlueFS::_compact_log_async(std::unique_lock<std::mutex>& l)
   dout(10) << __func__ << " new_log_jump_to 0x" << std::hex << new_log_jump_to
 	   << std::dec << dendl;
 
-  // create a new log [writer]
-  new_log = new File;
-  new_log->fnode.ino = 0;   // so that _flush_range won't try to log the fnode
+  // allocate
   int r = _allocate(BlueFS::BDEV_DB, new_log_jump_to,
                     &new_log->fnode.extents);
   assert(r == 0);
@@ -1240,21 +1244,11 @@ void BlueFS::_compact_log_async(std::unique_lock<std::mutex>& l)
   // 3. flush
   r = _flush(new_log_writer, true);
   assert(r == 0);
-  lock.unlock();
 
   // 4. wait
-  dout(10) << __func__ << " waiting for compacted log to sync" << dendl;
-  wait_for_aio(new_log_writer);
+  _flush_bdev_safely(new_log_writer);
 
-  list<aio_t> completed_ios;
-  _claim_completed_aios(new_log_writer, &completed_ios);
-  flush_bdev();
-  completed_ios.clear();
-
-  // 5. retake lock
-  lock.lock();
-
-  // 6. update our log fnode
+  // 5. update our log fnode
   // discard first old_log_jump_to extents
   dout(10) << __func__ << " remove 0x" << std::hex << old_log_jump_to << std::dec
 	   << " of " << log_file->fnode.extents << dendl;
@@ -1293,7 +1287,7 @@ void BlueFS::_compact_log_async(std::unique_lock<std::mutex>& l)
   log_writer->pos = log_writer->file->fnode.size =
     log_writer->pos - old_log_jump_to + new_log_jump_to;
 
-  // 7. write the super block to reflect the changes
+  // 6. write the super block to reflect the changes
   dout(10) << __func__ << " writing super" << dendl;
   super.log_fnode = log_file->fnode;
   ++super.version;
@@ -1303,7 +1297,7 @@ void BlueFS::_compact_log_async(std::unique_lock<std::mutex>& l)
   flush_bdev();
   lock.lock();
 
-  // 8. release old space
+  // 7. release old space
   dout(10) << __func__ << " release old log extents " << old_extents << dendl;
   for (auto& r : old_extents) {
     pending_release[r.bdev].insert(r.offset, r.length);
@@ -1681,9 +1675,7 @@ void BlueFS::wait_for_aio(FileWriter *h)
       p->aio_wait();
     }
   }
-  utime_t end = ceph_clock_now();
-  utime_t dur = end - start;
-  dout(10) << __func__ << " " << h << " done in " << dur << dendl;
+  dout(10) << __func__ << " " << h << " done in " << (ceph_clock_now() - start) << dendl;
 }
 
 int BlueFS::_flush(FileWriter *h, bool force)
@@ -1891,18 +1883,19 @@ void BlueFS::sync_metadata()
   std::unique_lock<std::mutex> l(lock);
   if (log_t.empty()) {
     dout(10) << __func__ << " - no pending log events" << dendl;
-    return;
-  }
-  dout(10) << __func__ << dendl;
-  utime_t start = ceph_clock_now();
-  vector<interval_set<uint64_t>> to_release(pending_release.size());
-  to_release.swap(pending_release);
-  flush_bdev(); // FIXME?
-  _flush_and_sync_log(l);
-  for (unsigned i = 0; i < to_release.size(); ++i) {
-    for (auto p = to_release[i].begin(); p != to_release[i].end(); ++p) {
-      alloc[i]->release(p.get_start(), p.get_len());
+  } else {
+    dout(10) << __func__ << dendl;
+    utime_t start = ceph_clock_now();
+    vector<interval_set<uint64_t>> to_release(pending_release.size());
+    to_release.swap(pending_release);
+    flush_bdev(); // FIXME?
+    _flush_and_sync_log(l);
+    for (unsigned i = 0; i < to_release.size(); ++i) {
+      for (auto p = to_release[i].begin(); p != to_release[i].end(); ++p) {
+	alloc[i]->release(p.get_start(), p.get_len());
+      }
     }
+    dout(10) << __func__ << " done in " << (ceph_clock_now() - start) << dendl;
   }
 
   if (_should_compact_log()) {
@@ -1912,10 +1905,6 @@ void BlueFS::sync_metadata()
       _compact_log_async(l);
     }
   }
-
-  utime_t end = ceph_clock_now();
-  utime_t dur = end - start;
-  dout(10) << __func__ << " done in " << dur << dendl;
 }
 
 int BlueFS::open_for_write(

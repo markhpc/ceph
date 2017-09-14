@@ -12,6 +12,7 @@
 
 #include "common/errno.h"
 #include "common/ceph_json.h"
+#include "common/backport14.h"
 #include "rgw_rados.h"
 #include "rgw_acl.h"
 #include "rgw_acl_s3.h"
@@ -2161,13 +2162,17 @@ public:
     pool = store->get_zone_params().domain_root;
   }
 
-  int list_keys_init(RGWRados *store, void **phandle) override
-  {
-    list_keys_info *info = new list_keys_info;
+  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override {
+    auto info = ceph::make_unique<list_keys_info>();
 
     info->store = store;
 
-    *phandle = (void *)info;
+    int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
+                                           &info->ctx);
+    if (ret < 0) {
+      return ret;
+    }
+    *phandle = (void *)info.release();
 
     return 0;
   }
@@ -2183,8 +2188,8 @@ public:
 
     list<string> unfiltered_keys;
 
-    int ret = store->list_raw_objects(store->get_zone_params().domain_root, no_filter,
-                                      max, info->ctx, unfiltered_keys, truncated);
+    int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
+                                           unfiltered_keys, truncated);
     if (ret < 0 && ret != -ENOENT)
       return ret;
     if (ret == -ENOENT) {
@@ -2209,6 +2214,11 @@ public:
   void list_keys_complete(void *handle) override {
     list_keys_info *info = static_cast<list_keys_info *>(handle);
     delete info;
+  }
+
+  string get_marker(void *handle) {
+    list_keys_info *info = static_cast<list_keys_info *>(handle);
+    return info->store->list_raw_objs_get_cursor(info->ctx);
   }
 };
 
@@ -2351,13 +2361,17 @@ public:
     pool = store->get_zone_params().domain_root;
   }
 
-  int list_keys_init(RGWRados *store, void **phandle) override
-  {
-    list_keys_info *info = new list_keys_info;
+  int list_keys_init(RGWRados *store, const string& marker, void **phandle) override {
+    auto info = ceph::make_unique<list_keys_info>();
 
     info->store = store;
 
-    *phandle = (void *)info;
+    int ret = store->list_raw_objects_init(store->get_zone_params().domain_root, marker,
+                                           &info->ctx);
+    if (ret < 0) {
+      return ret;
+    }
+    *phandle = (void *)info.release();
 
     return 0;
   }
@@ -2373,8 +2387,8 @@ public:
 
     list<string> unfiltered_keys;
 
-    int ret = store->list_raw_objects(store->get_zone_params().domain_root, no_filter,
-                                      max, info->ctx, unfiltered_keys, truncated);
+    int ret = store->list_raw_objects_next(no_filter, max, info->ctx,
+                                           unfiltered_keys, truncated);
     if (ret < 0 && ret != -ENOENT)
       return ret;
     if (ret == -ENOENT) {
@@ -2402,6 +2416,11 @@ public:
   void list_keys_complete(void *handle) override {
     list_keys_info *info = static_cast<list_keys_info *>(handle);
     delete info;
+  }
+
+  string get_marker(void *handle) {
+    list_keys_info *info = static_cast<list_keys_info *>(handle);
+    return info->store->list_raw_objs_get_cursor(info->ctx);
   }
 
   /*

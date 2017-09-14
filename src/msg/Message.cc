@@ -65,8 +65,6 @@ using namespace std;
 #include "messages/MOSDPing.h"
 #include "messages/MOSDOp.h"
 #include "messages/MOSDOpReply.h"
-#include "messages/MOSDSubOp.h"
-#include "messages/MOSDSubOpReply.h"
 #include "messages/MOSDRepOp.h"
 #include "messages/MOSDRepOpReply.h"
 #include "messages/MOSDMap.h"
@@ -98,7 +96,6 @@ using namespace std;
 #include "messages/MMonGetMap.h"
 #include "messages/MMonGetVersion.h"
 #include "messages/MMonGetVersionReply.h"
-#include "messages/MMonHealth.h"
 #include "messages/MMonHealthChecks.h"
 #include "messages/MMonMetadata.h"
 #include "messages/MDataPing.h"
@@ -463,12 +460,6 @@ Message *decode_message(CephContext *cct, int crcflags,
   case CEPH_MSG_OSD_OPREPLY:
     m = new MOSDOpReply();
     break;
-  case MSG_OSD_SUBOP:
-    m = new MOSDSubOp();
-    break;
-  case MSG_OSD_SUBOPREPLY:
-    m = new MOSDSubOpReply();
-    break;
   case MSG_OSD_REPOP:
     m = new MOSDRepOp();
     break;
@@ -791,10 +782,6 @@ Message *decode_message(CephContext *cct, int crcflags,
 
   case MSG_TIMECHECK:
     m = new MTimeCheck();
-    break;
-
-  case MSG_MON_HEALTH:
-    m = new MMonHealth();
     break;
 
   case MSG_MON_HEALTH_CHECKS:

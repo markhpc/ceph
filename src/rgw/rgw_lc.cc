@@ -67,7 +67,14 @@ bool RGWLifecycleConfiguration::_add_rule(LCRule *rule)
     op.mp_expiration = rule->get_mp_expiration().get_days();
   }
   op.dm_expiration = rule->get_dm_expiration();
-  auto ret = prefix_map.insert(pair<string, lc_op>(rule->get_prefix(), op));
+
+  std::string prefix;
+  if (rule->get_filter().has_prefix()){
+    prefix = rule->get_filter().get_prefix();
+  } else {
+    prefix = rule->get_prefix();
+  }
+  auto ret = prefix_map.emplace(std::move(prefix), std::move(op));
   return ret.second;
 }
 
@@ -195,8 +202,10 @@ bool RGWLC::if_already_run_today(time_t& start_date)
   localtime_r(&start_date, &bdt);
 
   if (cct->_conf->rgw_lc_debug_interval > 0) {
-	  /* We're debugging, so say we can run */
-	  return false;
+    if (now - start_date < cct->_conf->rgw_lc_debug_interval)
+      return true;
+    else
+      return false;
   }
 
   bdt.tm_hour = 0;
@@ -667,13 +676,11 @@ int RGWLC::process(int index, int max_lock_secs)
     l.unlock(&store->lc_pool_ctx, obj_names[index]);
     ret = bucket_lc_process(entry.first);
     bucket_lc_post(index, max_lock_secs, entry, ret);
-    return 0;
+  }while(1);
+
 exit:
     l.unlock(&store->lc_pool_ctx, obj_names[index]);
     return 0;
-
-  }while(1);
-
 }
 
 void RGWLC::start_processor()

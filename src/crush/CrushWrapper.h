@@ -539,6 +539,9 @@ public:
 		    ostream *ss);
 
   // rule names
+  int rename_rule(const string& srcname,
+                  const string& dstname,
+                  ostream *ss);
   bool rule_exists(string name) const {
     build_rmaps();
     return rule_name_rmap.count(name);
@@ -571,25 +574,25 @@ public:
    *
    * Note that these may not be parentless roots.
    */
-  void find_takes(set<int>& roots) const;
+  void find_takes(set<int> *roots) const;
 
   /**
    * find tree roots
    *
    * These are parentless nodes in the map.
    */
-  void find_roots(set<int>& roots) const;
+  void find_roots(set<int> *roots) const;
 
 
   /**
    * find tree roots that contain shadow (device class) items only
    */
-  void find_shadow_roots(set<int>& roots) const {
+  void find_shadow_roots(set<int> *roots) const {
     set<int> all;
-    find_roots(all);
+    find_roots(&all);
     for (auto& p: all) {
       if (is_shadow_item(p)) {
-        roots.insert(p);
+        roots->insert(p);
       }
     }
   }
@@ -600,12 +603,12 @@ public:
    * These are parentless nodes in the map that are not shadow
    * items for device classes.
    */
-  void find_nonshadow_roots(set<int>& roots) const {
+  void find_nonshadow_roots(set<int> *roots) const {
     set<int> all;
-    find_roots(all);
+    find_roots(&all);
     for (auto& p: all) {
       if (!is_shadow_item(p)) {
-        roots.insert(p);
+        roots->insert(p);
       }
     }
   }
@@ -661,7 +664,7 @@ public:
    *
    * FIXME: ambiguous for items that occur multiple times in the map
    */
-  pair<string,string> get_immediate_parent(int id, int *ret = NULL);
+  pair<string,string> get_immediate_parent(int id, int *ret = NULL) const;
 
   int get_immediate_parent_id(int id, int *parent) const;
 
@@ -680,7 +683,7 @@ public:
    * returns the location in the form of (type=foo) where type is a type of bucket
    * specified in the CRUSH map and foo is a name specified in the CRUSH map
    */
-  map<string, string> get_full_location(int id);
+  map<string, string> get_full_location(int id) const;
 
   /*
    * identical to get_full_location(int id) although it returns the type/name
@@ -688,7 +691,7 @@ public:
    *
    * returns -ENOENT if id is not found.
    */
-  int get_full_location_ordered(int id, vector<pair<string, string> >& path);
+  int get_full_location_ordered(int id, vector<pair<string, string> >& path) const;
 
   /*
    * identical to get_full_location_ordered(int id, vector<pair<string, string> >& path),
@@ -697,13 +700,13 @@ public:
    *
    * returns the location in descending hierarchy as a string.
    */
-  string get_full_location_ordered_string(int id);
+  string get_full_location_ordered_string(int id) const;
 
   /**
    * returns (type_id, type) of all parent buckets between id and
    * default, can be used to check for anomolous CRUSH maps
    */
-  map<int, string> get_parent_hierarchy(int id);
+  map<int, string> get_parent_hierarchy(int id) const;
 
   /**
    * enumerate immediate children of given node
@@ -711,7 +714,7 @@ public:
    * @param id parent bucket or device id
    * @return number of items, or error
    */
-  int get_children(int id, list<int> *children);
+  int get_children(int id, list<int> *children) const;
 
   /**
     * enumerate leaves(devices) of given node
@@ -719,9 +722,12 @@ public:
     * @param name parent bucket name
     * @return 0 on success or a negative errno on error.
     */
-  int get_leaves(const string &name, set<int> *leaves);
-  int _get_leaves(int id, list<int> *leaves); // worker
+  int get_leaves(const string &name, set<int> *leaves) const;
 
+private:
+  int _get_leaves(int id, list<int> *leaves) const; // worker
+
+public:
   /**
    * insert an item into the map at a specific position
    *
@@ -865,7 +871,7 @@ public:
    * @param loc a set of key=value pairs describing a location in the hierarchy
    */
   int get_common_ancestor_distance(CephContext *cct, int id,
-				   const std::multimap<string,string>& loc);
+				   const std::multimap<string,string>& loc) const;
 
   /**
    * parse a set of key/value pairs out of a string vector
@@ -970,6 +976,17 @@ public:
       return true;
     return false;
   }
+  bool rule_has_take(unsigned ruleno, int take) const {
+    if (!crush) return false;
+    crush_rule *rule = get_rule(ruleno);
+    for (unsigned i = 0; i < rule->len; ++i) {
+      if (rule->steps[i].op == CRUSH_RULE_TAKE &&
+	  rule->steps[i].arg1 == take) {
+	return true;
+      }
+    }
+    return false;
+  }
   int get_rule_len(unsigned ruleno) const {
     crush_rule *r = get_rule(ruleno);
     if (IS_ERR(r)) return PTR_ERR(r);
@@ -1011,6 +1028,12 @@ public:
     return s->arg2;
   }
 
+private:
+  float _get_take_weight_osd_map(int root, map<int,float> *pmap) const;
+  void _normalize_weight_map(float sum, const map<int,float>& m,
+			     map<int,float> *pmap) const;
+
+public:
   /**
    * calculate a map of osds to weights for a given rule
    *
@@ -1021,7 +1044,19 @@ public:
    * @param pmap [out] map of osd to weight
    * @return 0 for success, or negative error code
    */
-  int get_rule_weight_osd_map(unsigned ruleno, map<int,float> *pmap);
+  int get_rule_weight_osd_map(unsigned ruleno, map<int,float> *pmap) const;
+
+  /**
+   * calculate a map of osds to weights for a given starting root
+   *
+   * Generate a map of which OSDs get how much relative weight for a
+   * given starting root
+   *
+   * @param root node
+   * @param pmap [out] map of osd to weight
+   * @return 0 for success, or negative error code
+   */
+  int get_take_weight_osd_map(int root, map<int,float> *pmap) const;
 
   /* modifiers */
 
@@ -1217,6 +1252,8 @@ public:
   int rename_class(const string& srcname, const string& dstname);
   int populate_classes(
     const std::map<int32_t, map<int32_t, int32_t>>& old_class_bucket);
+  int get_rules_by_class(const string &class_name, set<int> *rules);
+  int get_rules_by_osd(int osd, set<int> *rules);
   bool _class_is_dead(int class_id);
   void cleanup_dead_classes();
   int rebuild_roots_with_classes();
@@ -1254,14 +1291,15 @@ public:
 
   int find_rule(int ruleset, int type, int size) const {
     if (!crush) return -1;
-    if (!have_uniform_rules) {
-      return crush_find_rule(crush, ruleset, type, size);
-    } else {
-      if (ruleset < (int)crush->max_rules &&
-	  crush->rules[ruleset])
-	return ruleset;
-      return -1;
+    if (have_uniform_rules &&
+	ruleset < (int)crush->max_rules &&
+	crush->rules[ruleset] &&
+	crush->rules[ruleset]->mask.type == type &&
+	crush->rules[ruleset]->mask.min_size <= size &&
+	crush->rules[ruleset]->mask.max_size >= size) {
+      return ruleset;
     }
+    return crush_find_rule(crush, ruleset, type, size);
   }
 
   bool ruleset_exists(const int ruleset) const {

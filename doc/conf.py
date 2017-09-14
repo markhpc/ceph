@@ -20,6 +20,7 @@ if tags.has('man'):
                          'mon/*',
                          'rados/*',
                          'mgr/*',
+                         'ceph-volume/*',
                          'radosgw/*',
                          'rbd/*',
                          'start/*']
@@ -33,7 +34,6 @@ html_theme_path = ['_themes']
 html_title = "Ceph Documentation"
 html_logo = 'logo.png'
 html_favicon = 'favicon.ico'
-html_use_smartypants = True
 html_show_sphinx = False
 html_sidebars = {
     '**': ['smarttoc.html', 'searchbox.html'],
@@ -43,9 +43,10 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.graphviz',
     'sphinx.ext.todo',
-    'sphinx_ditaa',
+    'sphinxcontrib.ditaa',
     'breathe',
     ]
+ditaa = 'ditaa'
 todo_include_todos = True
 
 top_level = os.path.dirname(

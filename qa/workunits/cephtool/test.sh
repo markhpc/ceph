@@ -1,6 +1,7 @@
-#!/bin/bash -x
+#!/usr/bin/env bash
 # -*- mode:shell-script; tab-width:8; sh-basic-offset:2; indent-tabs-mode:t -*-
 # vim: ts=8 sw=8 ft=bash smarttab
+set -x
 
 source $(dirname $0)/../../standalone/ceph-helpers.sh
 
@@ -1435,7 +1436,7 @@ function test_mon_osd()
   expect_false ceph osd unset sortbitwise  # cannot be unset
   expect_false ceph osd set bogus
   expect_false ceph osd unset bogus
-  ceph osd require-osd-release luminous
+  ceph osd require-osd-release mimic
   # can't lower (or use new command for anything but jewel)
   expect_false ceph osd require-osd-release jewel
   # these are no-ops but should succeed.
@@ -1744,7 +1745,7 @@ function test_mon_osd_pool_quota()
   # get quotas
   #
   ceph osd pool get-quota tmp-quota-pool | grep 'max bytes.*10B'
-  ceph osd pool get-quota tmp-quota-pool | grep 'max objects.*10240k objects'
+  ceph osd pool get-quota tmp-quota-pool | grep 'max objects.*10M objects'
   #
   # get quotas in json-pretty format
   #
@@ -2177,9 +2178,6 @@ function test_mon_osd_misc()
   # expect error about unused argument foo
   ceph osd ls foo 2>$TMPFILE; check_response 'unused' $? 22 
 
-  # expect "not in range" for invalid full ratio
-  ceph pg set_full_ratio 95 2>$TMPFILE; check_response 'not in range' $? 22
-
   # expect "not in range" for invalid overload percentage
   ceph osd reweight-by-utilization 80 2>$TMPFILE; check_response 'higher than 100' $? 22
 
@@ -2385,6 +2383,9 @@ function test_mon_pool_application()
   ceph osd pool application set app_for_test rbd key1 value1
   ceph osd pool application set app_for_test rbd key2 value2
   ceph osd pool application set app_for_test rgw key1 value1
+  ceph osd pool application get app_for_test rbd key1 | grep 'value1'
+  ceph osd pool application get app_for_test rbd key2 | grep 'value2'
+  ceph osd pool application get app_for_test rgw key1 | grep 'value1'
 
   ceph osd pool ls detail --format=json | grep '"application_metadata":{"rbd":{"key1":"value1","key2":"value2"},"rgw":{"key1":"value1"}}'
 

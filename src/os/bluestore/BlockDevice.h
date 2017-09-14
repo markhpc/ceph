@@ -39,6 +39,7 @@ public:
 #ifdef HAVE_SPDK
   void *nvme_task_first = nullptr;
   void *nvme_task_last = nullptr;
+  std::atomic_int total_nseg = {0};
 #endif
 
 
@@ -82,6 +83,7 @@ public:
 class BlockDevice {
 public:
   CephContext* cct;
+  typedef void (*aio_callback_t)(void *handle, void *aio);
 private:
   std::mutex ioc_reap_lock;
   std::vector<IOContext*> ioc_reap_queue;
@@ -93,13 +95,16 @@ protected:
   bool rotational = true;
 
 public:
-  BlockDevice(CephContext* cct) 
+  aio_callback_t aio_callback;
+  void *aio_callback_priv;
+  BlockDevice(CephContext* cct, aio_callback_t cb, void *cbpriv)
   : cct(cct),
     size(0),
-    block_size(0)
+    block_size(0),
+    aio_callback(cb),
+    aio_callback_priv(cbpriv)
  {}
   virtual ~BlockDevice() = default;
-  typedef void (*aio_callback_t)(void *handle, void *aio);
 
   static BlockDevice *create(
     CephContext* cct, const std::string& path, aio_callback_t cb, void *cbpriv);
@@ -111,7 +116,7 @@ public:
   uint64_t get_size() const { return size; }
   uint64_t get_block_size() const { return block_size; }
 
-  virtual int collect_metadata(std::string prefix, std::map<std::string,std::string> *pm) const = 0;
+  virtual int collect_metadata(const std::string& prefix, std::map<std::string,std::string> *pm) const = 0;
 
   virtual int read(
     uint64_t off,
@@ -148,6 +153,15 @@ public:
   virtual int invalidate_cache(uint64_t off, uint64_t len) = 0;
   virtual int open(const std::string& path) = 0;
   virtual void close() = 0;
+
+protected:
+  bool is_valid_io(uint64_t off, uint64_t len) const {
+    return (off % block_size == 0 &&
+            len % block_size == 0 &&
+            len > 0 &&
+            off < size &&
+            off + len <= size);
+  }
 };
 
 #endif //CEPH_OS_BLUESTORE_BLOCKDEVICE_H

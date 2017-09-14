@@ -795,10 +795,8 @@ public:
 
   explicit eversion_t(bufferlist& bl) : __pad(0) { decode(bl); }
 
-  static eversion_t max() {
-    eversion_t max;
-    max.version -= 1;
-    max.epoch -= 1;
+  static const eversion_t& max() {
+    static const eversion_t max(-1,-1);
     return max;
   }
 
@@ -810,6 +808,15 @@ public:
   }
 
   string get_key_name() const;
+
+  // key must point to the beginning of a block of 32 chars
+  inline void get_key_name(char* key) const {
+    // Below is equivalent of sprintf("%010u.%020llu");
+    key[31] = 0;
+    ritoa<uint64_t, 10, 20>(version, key + 31);
+    key[10] = '.';
+    ritoa<uint32_t, 10, 10>(epoch, key + 10);
+  }
 
   void encode(bufferlist &bl) const {
 #if defined(CEPH_LITTLE_ENDIAN)
@@ -1147,6 +1154,9 @@ struct pg_pool_t {
     FLAG_WRITE_FADVISE_DONTNEED = 1<<7, // write mode with LIBRADOS_OP_FLAG_FADVISE_DONTNEED
     FLAG_NOSCRUB = 1<<8, // block periodic scrub
     FLAG_NODEEP_SCRUB = 1<<9, // block periodic deep-scrub
+    FLAG_FULL_NO_QUOTA = 1<<10, // pool is currently running out of quota, will set FLAG_FULL too
+    FLAG_NEARFULL = 1<<11, // pool is nearfull
+    FLAG_BACKFILLFULL = 1<<12, // pool is backfillfull
   };
 
   static const char *get_flag_name(int f) {
@@ -1161,6 +1171,9 @@ struct pg_pool_t {
     case FLAG_WRITE_FADVISE_DONTNEED: return "write_fadvise_dontneed";
     case FLAG_NOSCRUB: return "noscrub";
     case FLAG_NODEEP_SCRUB: return "nodeep-scrub";
+    case FLAG_FULL_NO_QUOTA: return "full_no_quota";
+    case FLAG_NEARFULL: return "nearfull";
+    case FLAG_BACKFILLFULL: return "backfillfull";
     default: return "???";
     }
   }
@@ -1199,6 +1212,12 @@ struct pg_pool_t {
       return FLAG_NOSCRUB;
     if (name == "nodeep-scrub")
       return FLAG_NODEEP_SCRUB;
+    if (name == "full_no_quota")
+      return FLAG_FULL_NO_QUOTA;
+    if (name == "nearfull")
+      return FLAG_NEARFULL;
+    if (name == "backfillfull")
+      return FLAG_BACKFILLFULL;
     return 0;
   }
 
@@ -2067,7 +2086,7 @@ WRITE_CLASS_ENCODER_FEATURES(pool_stat_t)
 /**
  * pg_hit_set_info_t - information about a single recorded HitSet
  *
- * Track basic metadata about a HitSet, like the nubmer of insertions
+ * Track basic metadata about a HitSet, like the number of insertions
  * and the time range it covers.
  */
 struct pg_hit_set_info_t {
@@ -2591,13 +2610,7 @@ public:
     static void generate_test_instances(list<pg_interval_t*>& o);
   };
 
-  PastIntervals() = default;
-  PastIntervals(bool ec_pool, const OSDMap &osdmap) : PastIntervals() {
-    update_type_from_map(ec_pool, osdmap);
-  }
-  PastIntervals(bool ec_pool, bool compact) : PastIntervals() {
-    update_type(ec_pool, compact);
-  }
+  PastIntervals();
   PastIntervals(PastIntervals &&rhs) = default;
   PastIntervals &operator=(PastIntervals &&rhs) = default;
 
@@ -2618,7 +2631,6 @@ public:
     virtual void encode(bufferlist &bl) const = 0;
     virtual void decode(bufferlist::iterator &bl) = 0;
     virtual void dump(Formatter *f) const = 0;
-    virtual bool is_classic() const = 0;
     virtual void iterate_mayberw_back_to(
       bool ec_pool,
       epoch_t les,
@@ -2633,7 +2645,6 @@ public:
 
     virtual ~interval_rep() {}
   };
-  friend class pi_simple_rep;
   friend class pi_compact_rep;
 private:
 
@@ -2647,15 +2658,10 @@ public:
     return past_intervals->add_interval(ec_pool, interval);
   }
 
-  bool is_classic() const {
-    assert(past_intervals);
-    return past_intervals->is_classic();
-  }
-
   void encode(bufferlist &bl) const {
     ENCODE_START(1, 1, bl);
     if (past_intervals) {
-      __u8 type = is_classic() ? 1 : 2;
+      __u8 type = 2;
       ::encode(type, bl);
       past_intervals->encode(bl);
     } else {
@@ -2663,18 +2669,8 @@ public:
     }
     ENCODE_FINISH(bl);
   }
-  void encode_classic(bufferlist &bl) const {
-    if (past_intervals) {
-      assert(past_intervals->is_classic());
-      past_intervals->encode(bl);
-    } else {
-      // it's a map<>
-      ::encode((uint32_t)0, bl);
-    }
-  }
 
   void decode(bufferlist::iterator &bl);
-  void decode_classic(bufferlist::iterator &bl);
 
   void dump(Formatter *f) const {
     assert(past_intervals);
@@ -2870,9 +2866,6 @@ public:
 
     friend class PastIntervals;
   };
-
-  void update_type(bool ec_pool, bool compact);
-  void update_type_from_map(bool ec_pool, const OSDMap &osdmap);
 
   template <typename... Args>
   PriorSet get_prior_set(Args&&... args) const {
@@ -3439,6 +3432,16 @@ struct pg_log_dup_t {
   void decode(bufferlist::iterator &bl);
   void dump(Formatter *f) const;
   static void generate_test_instances(list<pg_log_dup_t*>& o);
+
+  bool operator==(const pg_log_dup_t &rhs) const {
+    return reqid == rhs.reqid &&
+      version == rhs.version &&
+      user_version == rhs.user_version &&
+      return_code == rhs.return_code;
+  }
+  bool operator!=(const pg_log_dup_t &rhs) const {
+    return !(*this == rhs);
+  }
 
   friend std::ostream& operator<<(std::ostream& out, const pg_log_dup_t& e);
 };
@@ -4726,8 +4729,8 @@ struct object_info_t {
     omap_digest = -1;
   }
   void new_object() {
-    set_data_digest(-1);
-    set_omap_digest(-1);
+    clear_data_digest();
+    clear_omap_digest();
   }
 
   void encode(bufferlist& bl, uint64_t features) const;
