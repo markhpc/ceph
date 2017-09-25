@@ -1664,10 +1664,11 @@ private:
       }
 
       ShardData(
-	string lock_name,
+	string ordering_lock,
 	uint64_t max_tok_per_prio, uint64_t min_cost, CephContext *cct,
 	io_queue opqueue)
-	: sdata_lock(lock_name, false, true, false, cct) {
+	  : sdata_op_ordering_lock(ordering_lock.c_str(), false, true,
+				 false, cct) {
 	if (opqueue == io_queue::weightedpriority) {
 	  pqueue = std::unique_ptr
 	    <WeightedPriorityQueue<pair<spg_t,PGQueueable>,uint64_t>>(
@@ -1702,10 +1703,11 @@ private:
         osd(o),
         num_shards(pnum_shards) {
       for (uint32_t i = 0; i < num_shards; i++) {
-	char lock_name[32] = {0};
-	snprintf(lock_name, sizeof(lock_name), "%s.%d", "OSD:ShardedOpWQ:", i);
+	char order_lock[32] = {0};
+	snprintf(order_lock, sizeof(order_lock), "%s.%d",
+		 "OSD:ShardedOpWQ:order:", i);
 	ShardData* one_shard = new ShardData(
-	  lock_name,
+	  order_lock,
 	  osd->cct->_conf->osd_op_pq_max_tokens_per_priority, 
 	  osd->cct->_conf->osd_op_pq_min_cost, osd->cct, osd->op_queue);
 	shard_list.push_back(one_shard);
@@ -1743,8 +1745,7 @@ private:
       for(uint32_t i = 0; i < num_shards; i++) {
 	ShardData* sdata = shard_list[i];
 	assert (NULL != sdata); 
-	Mutex::Locker l(sdata->sdata_lock);
-	sdata->sdata_cond.Signal();
+	sdata->sdata_cond.Signal(true);
       }
     }
 
