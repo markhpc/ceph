@@ -6608,11 +6608,11 @@ int BlueStore::_do_read(
 	[&](uint64_t offset, uint64_t length) {
 	  int r;
 	  // use aio if there are more regions to read than those in this blob
-	  if (num_regions > p.second.size()) {
-	    r = bdev->aio_read(offset, length, &bl, &ioc);
-	  } else {
+//	  if (num_regions > p.second.size()) {
+//	    r = bdev->aio_read(offset, length, &bl, &ioc);
+//	  } else {
 	    r = bdev->read(offset, length, &bl, &ioc, false);
-	  }
+//	  }
 	  if (r < 0)
             return r;
           return 0;
@@ -6653,11 +6653,11 @@ int BlueStore::_do_read(
 	  [&](uint64_t offset, uint64_t length) {
 	    int r;
 	    // use aio if there is more than one region to read
-	    if (num_regions > 1) {
-	      r = bdev->aio_read(offset, length, &reg.bl, &ioc);
-	    } else {
+//	    if (num_regions > 1) {
+//	      r = bdev->aio_read(offset, length, &reg.bl, &ioc);
+//	    } else {
 	      r = bdev->read(offset, length, &reg.bl, &ioc, false);
-	    }
+//	    }
 	    if (r < 0)
               return r;
             return 0;
