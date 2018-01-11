@@ -142,6 +142,9 @@
 /* define if bluestore enabled */
 #cmakedefine WITH_BLUESTORE
 
+/* define if newstore enabled */
+#cmakedefine WITH_NEWSTORE
+
 /* define if embedded enabled */
 #cmakedefine WITH_EMBEDDED
 

@@ -35,10 +35,18 @@ if(WITH_BLUESTORE)
   )
 endif(WITH_BLUESTORE)
 
+if(WITH_NEWSTORE)
+  list(APPEND libos_srcs
+    newstore/NewStore.cc
+    newstore/newstore_types.cc
+  )
+endif(WITH_NEWSTORE)
+
 if(HAVE_LIBAIO)
   list(APPEND libos_srcs
     bluestore/KernelDevice.cc
-    bluestore/aio.cc)
+    bluestore/aio.cc
+  )
 endif()
 
 if(WITH_FUSE)

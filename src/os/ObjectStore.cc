@@ -23,6 +23,10 @@
 #if defined(WITH_BLUESTORE)
 #include "bluestore/BlueStore.h"
 #endif
+#if defined(WITH_NEWSTORE)
+#include "newstore/NewStore.h"
+#endif
+
 #include "kstore/KStore.h"
 
 void decode_str_str_map_to_bl(bufferlist::iterator& p,

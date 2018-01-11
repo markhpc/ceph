@@ -3237,6 +3237,134 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     // --------------------------
+    // newstore
+
+    Option("newstore_max_dir_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1000000)
+    .set_description(""),
+
+    Option("newstore_min_frag_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1048576)
+    .set_description(""),
+
+    Option("newstore_max_frag_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1048576*16)
+    .set_description(""),
+
+    Option("newstore_onode_map_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1024)
+    .set_description(""),
+
+    Option("newstore_backend", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("rocksdb")
+    .set_description(""),
+
+    Option("newstore_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("rocksdb")
+    .set_description("compression=kNoCompression,max_write_buffer_number=16,min_write_buffer_number_to_merge=6,recycle_log_file_num=16"),
+
+    Option("newstore_fail_eio", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description(""),
+
+    Option("newstore_sync_io", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description(""),
+
+    Option("newstore_sync_transcation", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description(""),
+
+    Option("newstore_sync_submit_transaction", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description(""),
+
+    Option("newstore_sync_wal_apply", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description(""),
+
+    Option("newstore_fsync_threads", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(16)
+    .set_description(""),
+
+    Option("newstore_fsync_thread_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(30)
+    .set_description(""),
+
+    Option("newstore_fsync_thread_suicide_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(120)
+    .set_description(""),
+
+    Option("newstore_wal_threads", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(4)
+    .set_description(""),
+
+    Option("newstore_wal_thread_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(30)
+    .set_description(""),
+
+    Option("newstore_wal_thread_suicide_timeout", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(120)
+    .set_description(""),
+
+    Option("newstore_max_ops", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(512)
+    .set_description(""),
+
+    Option("newstore_max_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(64*1024*1024)
+    .set_description(""),
+
+    Option("newstore_wal_max_ops", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(512)
+    .set_description(""),
+
+    Option("newstore_wal_max_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(64*1024*1024)
+    .set_description(""),
+
+    Option("newstore_fid_prealloc", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1024)
+    .set_description(""),
+
+    Option("newstore_nid_prealloc", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1024)
+    .set_description(""),
+
+    Option("newstore_overlay_max_length", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(65536)
+    .set_description(""),
+
+    Option("newstore_overlay_max", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(32)
+    .set_description(""),
+
+    Option("newstore_open_by_handle", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description(""),
+
+    Option("newstore_o_direct", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description(""),
+
+//    Option("newstore_db_path", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+//    .set_default("")
+//    .set_description(""),
+
+    Option("newstore_aio", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .set_description(""),
+
+    Option("newstore_aio_poll_ms", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(250)
+    .set_description(""),
+
+    Option("newstore_aio_max_queue_depth", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(4096)
+    .set_description(""),
+
+
+    // --------------------------
     // bluestore
 
     Option("bdev_debug_inflight_ios", Option::TYPE_BOOL, Option::LEVEL_DEV)

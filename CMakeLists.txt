@@ -226,6 +226,12 @@ if(WITH_BLUESTORE)
   set(HAVE_LIBAIO ${AIO_FOUND})
 endif()
 
+option(WITH_NEWSTORE "Newstore OSD backend" ON)
+if(WITH_NEWSTORE)
+  find_package(aio)
+  set(HAVE_LIBAIO ${AIO_FOUND})
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|amd64|x86_64|AMD64")
   option(WITH_SPDK "Enable SPDK" ON)
 else()
