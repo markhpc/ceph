@@ -647,7 +647,7 @@ int NewStore::OnodeHashLRU::trim(int max)
 #undef dout_prefix
 #define dout_prefix *_dout << "newstore(" << store->path << ").collection(" << cid << ") "
 
-NewStore::Collection::Collection(CephContext* cct, NewStore *ns, coll_t c)
+NewStore::Collection::Collection(CephContext* cct, NewStore *ns, const coll_t& c)
   : store(ns),
     cid(c),
     lock("NewStore::Collection::lock"),
@@ -715,17 +715,10 @@ NewStore::OnodeRef NewStore::Collection::get_onode(
 
 NewStore::NewStore(CephContext *cct, const string& path)
   : ObjectStore(cct, path),
-    db(NULL),
-    fs(NULL),
-    path_fd(-1),
-    fsid_fd(-1),
-    frag_fd(-1),
-    fset_fd(-1),
-    mounted(false),
-    coll_lock("NewStore::coll_lock"),
-    fid_lock("NewStore::fid_lock"),
-    nid_lock("NewStore::nid_lock"),
-    nid_max(0),
+//    coll_lock("NewStore::coll_lock"),
+//    fid_lock("NewStore::fid_lock"),
+//    nid_lock("NewStore::nid_lock"),
+//    nid_max(0),
     throttle_ops(cct, "newstore_max_ops", cct->_conf->get_val<uint64_t>("newstore_max_ops")),
     throttle_bytes(cct, "newstore_max_bytes", cct->_conf->get_val<uint64_t>("newstore_max_bytes")),
     throttle_wal_ops(cct, "newstore_wal_max_ops",
@@ -734,8 +727,8 @@ NewStore::NewStore(CephContext *cct, const string& path)
     throttle_wal_bytes(cct, "newstore_wal_max_bytes",
 		       cct->_conf->get_val<uint64_t>("newstore_max_bytes") +
 		       cct->_conf->get_val<uint64_t>("newstore_wal_max_bytes")),
-    wal_lock("NewStore::wal_lock"),
-    wal_seq(0),
+//    wal_lock("NewStore::wal_lock"),
+//    wal_seq(0),
     wal_tp(cct,
 	   "NewStore::wal_tp",
            "tp_wal_tp",
@@ -756,12 +749,12 @@ NewStore::NewStore(CephContext *cct, const string& path)
 	     cct->_conf->get_val<uint64_t>("newstore_fsync_thread_suicide_timeout"),
 	     &fsync_tp),
     aio_thread(this),
-    aio_stop(false),
+//    aio_stop(false),
     aio_queue(cct->_conf->get_val<uint64_t>("newstore_aio_max_queue_depth")),
-    kv_sync_thread(this),
-    kv_lock("NewStore::kv_lock"),
-    kv_stop(false),
-    reap_lock("NewStore::reap_lock")
+    kv_sync_thread(this)
+//    kv_lock("NewStore::kv_lock"),
+//    kv_stop(false),
+//    reap_lock("NewStore::reap_lock")
 {
   _init_logger();
 //  cct->_conf->add_observer(this);
@@ -4806,7 +4799,7 @@ int NewStore::_rename(TransContext *txc,
 
 int NewStore::_create_collection(
   TransContext *txc,
-  coll_t cid,
+  const coll_t& cid,
   unsigned bits,
   CollectionRef *c)
 {
@@ -4833,7 +4826,7 @@ int NewStore::_create_collection(
   return r;
 }
 
-int NewStore::_remove_collection(TransContext *txc, coll_t cid,
+int NewStore::_remove_collection(TransContext *txc, const coll_t& cid,
 				 CollectionRef *c)
 {
   dout(15) << __func__ << " " << cid << dendl;

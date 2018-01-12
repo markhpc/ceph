@@ -3260,8 +3260,8 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     Option("newstore_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
-    .set_default("rocksdb")
-    .set_description("compression=kNoCompression,max_write_buffer_number=16,min_write_buffer_number_to_merge=6,recycle_log_file_num=16"),
+    .set_default("compression=kNoCompression,max_write_buffer_number=16,min_write_buffer_number_to_merge=6,recycle_log_file_num=16")
+    .set_description(""),
 
     Option("newstore_fail_eio", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
@@ -3271,7 +3271,7 @@ std::vector<Option> get_global_options() {
     .set_default(false)
     .set_description(""),
 
-    Option("newstore_sync_transcation", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    Option("newstore_sync_transaction", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(false)
     .set_description(""),
 

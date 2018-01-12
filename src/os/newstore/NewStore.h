@@ -130,7 +130,7 @@ public:
       return cid;
     }
 
-    Collection(CephContext* cct, NewStore *ns, coll_t c);
+    Collection(CephContext* cct, NewStore *ns, const coll_t& c);
   };
   typedef boost::intrusive_ptr<Collection> CollectionRef;
 
@@ -481,32 +481,32 @@ public:
   // --------------------------------------------------------
   // members
 private:
-  CephContext *cct;
-  KeyValueDB *db;
-  FS *fs;
+//  CephContext *cct;
+  KeyValueDB *db = nullptr;
+  FS *fs = nullptr;
   uuid_d fsid;
-  int path_fd;  ///< open handle to $path
-  int fsid_fd;  ///< open handle (locked) to $path/fsid
-  int frag_fd;  ///< open handle to $path/fragments
-  int fset_fd;  ///< open handle to $path/fragments/$cur_fid.fset
-  bool mounted;
+  int path_fd = -1;  ///< open handle to $path
+  int fsid_fd = -1;  ///< open handle (locked) to $path/fsid
+  int frag_fd = -1;  ///< open handle to $path/fragments
+  int fset_fd = -1;  ///< open handle to $path/fragments/$cur_fid.fset
+  bool mounted = false;
 
-  RWLock coll_lock;    ///< rwlock to protect coll_map
+  RWLock coll_lock = {"NewStore::coll_lock"};    ///< rwlock to protect coll_map
   ceph::unordered_map<coll_t, CollectionRef> coll_map;
 
-  Mutex fid_lock;
+  Mutex fid_lock = {"NewStore::fid_lock"};
   fid_t fid_last;  ///< last allocated fid
   fid_t fid_max;   ///< max fid we can allocate before reserving more
 
-  Mutex nid_lock;
-  uint64_t nid_last;
-  uint64_t nid_max;
+  Mutex nid_lock = {"NewStore::nid_lock"};
+  uint64_t nid_last = 0;
+  uint64_t nid_max = 0;
 
   Throttle throttle_ops, throttle_bytes;          ///< submit to commit
   Throttle throttle_wal_ops, throttle_wal_bytes;  ///< submit to wal complete
 
-  Mutex wal_lock;
-  std::atomic<uint64_t> wal_seq;
+  Mutex wal_lock = {"NewStore::wal_lock"};
+  uint64_t wal_seq = 0;
   ThreadPool wal_tp;
   WALWQ wal_wq;
 
@@ -519,14 +519,14 @@ private:
   aio_queue_t aio_queue;
 
   KVSyncThread kv_sync_thread;
-  Mutex kv_lock;
+  Mutex kv_lock = {"NewStore::kv_lock"};
   Cond kv_cond, kv_sync_cond;
-  bool kv_stop;
+  bool kv_stop = false;
   deque<TransContext*> kv_queue, kv_committing;
   deque<TransContext*> wal_cleanup_queue, wal_cleaning;
 
   PerfCounters *logger = nullptr;
-  Mutex reap_lock;
+  Mutex reap_lock = {"NewStore::reap_lock"};
   Cond reap_cond;
   list<CollectionRef> removed_collections;
 
@@ -908,9 +908,9 @@ private:
 	      CollectionRef& c,
 	      const ghobject_t& old_oid,
 	      const ghobject_t& new_oid);
-  int _create_collection(TransContext *txc, coll_t cid, unsigned bits,
+  int _create_collection(TransContext *txc, const coll_t& cid, unsigned bits,
 			 CollectionRef *c);
-  int _remove_collection(TransContext *txc, coll_t cid, CollectionRef *c);
+  int _remove_collection(TransContext *txc, const coll_t& cid, CollectionRef *c);
   int _split_collection(TransContext *txc,
 			CollectionRef& c,
 			CollectionRef& d,
