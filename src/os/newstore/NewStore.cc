@@ -761,14 +761,15 @@ NewStore::NewStore(CephContext *cct, const string& path)
     kv_sync_thread(this),
     kv_lock("NewStore::kv_lock"),
     kv_stop(false),
-    logger(NULL),
     reap_lock("NewStore::reap_lock")
 {
   _init_logger();
+//  cct->_conf->add_observer(this);
 }
 
 NewStore::~NewStore()
 {
+//  cct->_conf->remove_observer(this);
   _shutdown_logger();
   assert(!mounted);
   assert(db == NULL);
@@ -778,12 +779,19 @@ NewStore::~NewStore()
 
 void NewStore::_init_logger()
 {
-  // XXX
+  PerfCountersBuilder b(cct, "newstore",
+                        l_newstore_first, l_newstore_last);
+  b.add_time_avg(l_newstore_kv_flush_lat, "kv_flush_lat",
+                 "Average kv_thread flush latency",
+                 "fl_l", PerfCountersBuilder::PRIO_INTERESTING);
+  logger = b.create_perf_counters();
+  cct->get_perfcounters_collection()->add(logger);
 }
 
 void NewStore::_shutdown_logger()
 {
-  // XXX
+  cct->get_perfcounters_collection()->remove(logger);
+  delete logger;
 }
 
 int NewStore::peek_journal_fsid(uuid_d *fsid)
@@ -1229,20 +1237,24 @@ void NewStore::_sync()
   dout(10) << __func__ << " done" << dendl;
 }
 
-int NewStore::statfs(struct statfs *buf)
+int NewStore::statfs(struct store_statfs_t *buf)
 {
-  if (::statfs(path.c_str(), buf) < 0) {
+  struct statfs _buf;
+  buf->reset();
+  if (::statfs(path.c_str(), &_buf) < 0) {
     int r = -errno;
     assert(!cct->_conf->get_val<bool>("newstore_fail_eio") || r != -EIO);
     return r;
   }
+  buf->total = _buf.f_blocks * _buf.f_bsize;
+  buf->available = _buf.f_bavail * _buf.f_bsize;
   return 0;
 }
 
 // ---------------
 // cache
 
-NewStore::CollectionRef NewStore::_get_collection(coll_t cid)
+NewStore::CollectionRef NewStore::_get_collection(const coll_t& cid)
 {
   RWLock::RLocker l(coll_lock);
   ceph::unordered_map<coll_t,CollectionRef>::iterator cp = coll_map.find(cid);
@@ -1293,19 +1305,34 @@ void NewStore::_reap_collections()
 // ---------------
 // read operations
 
-bool NewStore::exists(coll_t cid, const ghobject_t& oid)
+bool NewStore::exists(const coll_t& cid, const ghobject_t& oid)
 {
-  dout(10) << __func__ << " " << cid << " " << oid << dendl;
-  CollectionRef c = _get_collection(cid);
+  CollectionHandle c = _get_collection(cid);
   if (!c)
     return false;
-  RWLock::RLocker l(c->lock);
-  OnodeRef o = c->get_onode(oid, false);
-  if (!o || !o->exists)
-    return false;
-  return true;
+  return exists(c, oid);
 }
 
+bool NewStore::exists(CollectionHandle &c_, const ghobject_t& oid)
+{
+  Collection *c = static_cast<Collection *>(c_.get());
+  dout(10) << __func__ << " " << c->cid << " " << oid << dendl;
+  if (!c->exists)
+    return false;
+
+  bool r = true;
+
+  {
+    RWLock::RLocker l(c->lock);
+    OnodeRef o = c->get_onode(oid, false);
+    if (!o || !o->exists)
+      r = false;
+  }
+
+  return r;
+}
+
+/*
 int NewStore::stat(
     coll_t cid,
     const ghobject_t& oid,
@@ -1326,7 +1353,62 @@ int NewStore::stat(
   st->st_nlink = 1;
   return 0;
 }
+*/
 
+int NewStore::set_collection_opts(
+  const coll_t& cid,
+  const pool_opts_t& opts)
+{
+  CollectionHandle ch = _get_collection(cid);
+  if (!ch)
+    return -ENOENT;
+  Collection *c = static_cast<Collection *>(ch.get());
+  dout(15) << __func__ << " " << cid << " options " << opts << dendl;
+  if (!c->exists)
+    return -ENOENT;
+  RWLock::WLocker l(c->lock);
+  c->pool_opts = opts;
+  return 0;
+}
+
+int NewStore::stat(
+    const coll_t& cid,
+    const ghobject_t& oid,
+    struct stat *st,
+    bool allow_eio)
+{
+  CollectionHandle c = _get_collection(cid);
+  if (!c)
+    return -ENOENT;
+  return stat(c, oid, st, allow_eio);
+}
+
+int NewStore::stat(
+  CollectionHandle &c_,
+  const ghobject_t& oid,
+  struct stat *st,
+  bool allow_eio)
+{
+  Collection *c = static_cast<Collection *>(c_.get());
+  if (!c->exists)
+    return -ENOENT;
+  dout(10) << __func__ << " " << c->get_cid() << " " << oid << dendl;
+
+  {
+    RWLock::RLocker l(c->lock);
+    OnodeRef o = c->get_onode(oid, false);
+    if (!o || !o->exists)
+      return -ENOENT;
+    st->st_size = o->onode.size;
+    st->st_blksize = 4096;
+    st->st_blocks = (st->st_size + st->st_blksize - 1) / st->st_blksize;
+    st->st_nlink = 1;
+  }
+
+  return 0;
+}
+
+/*
 int NewStore::read(
   coll_t cid,
   const ghobject_t& oid,
@@ -1364,6 +1446,45 @@ int NewStore::read(
 	   << " = " << r << dendl;
   return r;
 }
+*/
+
+int NewStore::read(
+  const coll_t& cid,
+  const ghobject_t& oid,
+  uint64_t offset,
+  size_t length,
+  bufferlist& bl,
+  uint32_t op_flags)
+{
+  dout(15) << __func__ << " " << cid << " " << oid
+           << " " << offset << "~" << length
+           << dendl;
+  bl.clear();
+  CollectionRef c = _get_collection(cid);
+  if (!c)
+    return -ENOENT;
+  RWLock::RLocker l(c->lock);
+
+  int r;
+
+  OnodeRef o = c->get_onode(oid, false);
+  if (!o || !o->exists) {
+    r = -ENOENT;
+    goto out;
+  }
+
+  if (offset == length && offset == 0)
+    length = o->onode.size;
+
+  r = _do_read(o, offset, length, bl, op_flags);
+
+ out:
+  dout(10) << __func__ << " " << cid << " " << oid
+           << " " << offset << "~" << length
+           << " = " << r << dendl;
+  return r;
+}
+
 
 int NewStore::_do_read(
     OnodeRef o,
@@ -1509,13 +1630,30 @@ int NewStore::_do_read(
 }
 
 int NewStore::fiemap(
-  coll_t cid,
+  const coll_t& cid,
   const ghobject_t& oid,
   uint64_t offset,
   size_t len,
   bufferlist& bl)
 {
-  map<uint64_t, uint64_t> m;
+
+  map<uint64_t, uint64_t> destmap;
+  int r = fiemap(cid, oid, offset, len, destmap);
+  if (r >= 0) {
+    ::encode(destmap, bl);
+  }
+  return r;
+}
+
+
+int NewStore::fiemap(
+  const coll_t& cid,
+  const ghobject_t& oid,
+  uint64_t offset,
+  size_t len,
+  map<uint64_t, uint64_t>& destmap)
+{
+
   CollectionRef c = _get_collection(cid);
   if (!c)
     return -ENOENT;
@@ -1567,7 +1705,7 @@ int NewStore::fiemap(
     // overlay?
     if (op != oend && op->first <= offset) {
       uint64_t x_len = MIN(op->first + op->second.length - offset, len);
-      //m[offset] = x_len;
+      //destmap[offset] = x_len;
       dout(30) << __func__ << " get overlay, off =  " << offset << " len=" << x_len << dendl;
       len -= x_len;
       offset += x_len;
@@ -1586,7 +1724,7 @@ int NewStore::fiemap(
     if (fp != fend && fp->first <= offset) {
       uint64_t x_off = offset - fp->first - fp->second.offset;
       x_len = MIN(x_len, fp->second.length - x_off);
-      //m[offset] = x_len;
+      //destmap[offset] = x_len;
       dout(30) << __func__ << " get frag, off =  " << offset << " len=" << x_len << dendl;
       len -= x_len;
       offset += x_len;
@@ -1595,8 +1733,8 @@ int NewStore::fiemap(
       continue;
     }
     // we are seeing a hole, time to add an entry to fiemap.
-    m[start] = offset - start;
-    dout(20) << __func__ << " get fiemap entry, off =  " << start << " len=" << m[start] << dendl;
+    destmap[start] = offset - start;
+    dout(20) << __func__ << " get fiemap entry, off =  " << start << " len=" << destmap[start] << dendl;
     offset += x_len;
     start = offset;
     len -= x_len;
@@ -1604,17 +1742,15 @@ int NewStore::fiemap(
   }
   //add tailing
   if (offset - start != 0) {
-    m[start] = offset - start;
-    dout(20) << __func__ << " get fiemap entry, off =  " << start << " len=" << m[start] << dendl;
+    destmap[start] = offset - start;
+    dout(20) << __func__ << " get fiemap entry, off =  " << start << " len=" << destmap[start] << dendl;
   }
-
-  ::encode(m, bl);
-  dout(20) << __func__ << " " << offset << "~" << len << " size = 0 (" << m << ")" << dendl;
+  dout(20) << __func__ << " " << offset << "~" << len << " size = 0 (" << destmap << ")" << dendl;
   return 0;
 }
 
 int NewStore::getattr(
-  coll_t cid,
+  const coll_t& cid,
   const ghobject_t& oid,
   const char *name,
   bufferptr& value)
@@ -1646,7 +1782,7 @@ int NewStore::getattr(
 }
 
 int NewStore::getattrs(
-  coll_t cid,
+  const coll_t& cid,
   const ghobject_t& oid,
   map<string,bufferptr>& aset)
 {
@@ -1680,35 +1816,43 @@ int NewStore::list_collections(vector<coll_t>& ls)
   return 0;
 }
 
-bool NewStore::collection_exists(coll_t c)
+bool NewStore::collection_exists(const coll_t& cid)
 {
   RWLock::RLocker l(coll_lock);
-  return coll_map.count(c);
+  return coll_map.count(cid);
 }
 
-bool NewStore::collection_empty(coll_t cid)
+int NewStore::collection_empty(const coll_t& cid, bool *empty)
 {
   dout(15) << __func__ << " " << cid << dendl;
   vector<ghobject_t> ls;
   ghobject_t next;
-  int r = collection_list(cid, ghobject_t(), ghobject_t::get_max(), true, 5,
+  int r = collection_list(cid, ghobject_t(), ghobject_t::get_max(), 5,
 			  &ls, &next);
   if (r < 0)
     return false;  // fixme?
-  bool empty = ls.empty();
-  dout(10) << __func__ << " " << cid << " = " << (int)empty << dendl;
-  return empty;
+  *empty = ls.empty();
+  dout(10) << __func__ << " " << cid << " = " << (int)(*empty) << dendl;
+  return 0; 
+}
+
+int NewStore::collection_bits(const coll_t& cid)
+{
+  dout(15) << __func__ << " " << cid << dendl;
+  CollectionRef c = _get_collection(cid);
+  if (!c)
+    return -ENOENT;
+  RWLock::RLocker l(c->lock);
+  dout(10) << __func__ << " " << cid << " = " << c->cnode.bits << dendl;
+  return c->cnode.bits;
 }
 
 int NewStore::collection_list(
-  coll_t cid, ghobject_t start, ghobject_t end,
-  bool sort_bitwise, int max,
+  const coll_t& cid, const ghobject_t& start, const ghobject_t& end, int max,
   vector<ghobject_t> *ls, ghobject_t *pnext)
 {
   dout(15) << __func__ << " " << cid
 	   << " start " << start << " end " << end << " max " << max << dendl;
-  if (!sort_bitwise)
-    return -EOPNOTSUPP;
   CollectionRef c = _get_collection(cid);
   if (!c)
     return -ENOENT;
@@ -1900,9 +2044,9 @@ bufferlist NewStore::OmapIteratorImpl::value()
 }
 
 int NewStore::omap_get(
-  coll_t cid,                ///< [in] Collection containing oid
-  const ghobject_t &oid,   ///< [in] Object containing omap
-  bufferlist *header,      ///< [out] omap header
+  const coll_t& cid,           ///< [in] Collection containing oid
+  const ghobject_t &oid,       ///< [in] Object containing omap
+  bufferlist *header,          ///< [out] omap header
   map<string, bufferlist> *out /// < [out] Key to value map
   )
 {
@@ -1950,10 +2094,10 @@ int NewStore::omap_get(
 }
 
 int NewStore::omap_get_header(
-  coll_t cid,                ///< [in] Collection containing oid
+  const coll_t& cid,       ///< [in] Collection containing oid
   const ghobject_t &oid,   ///< [in] Object containing omap
   bufferlist *header,      ///< [out] omap header
-  bool allow_eio ///< [in] don't assert on eio
+  bool allow_eio           ///< [in] don't assert on eio
   )
 {
   dout(15) << __func__ << " " << cid << " oid " << oid << dendl;
@@ -1985,7 +2129,7 @@ int NewStore::omap_get_header(
 }
 
 int NewStore::omap_get_keys(
-  coll_t cid,              ///< [in] Collection containing oid
+  const coll_t& cid,     ///< [in] Collection containing oid
   const ghobject_t &oid, ///< [in] Object containing omap
   set<string> *keys      ///< [out] Keys defined on oid
   )
@@ -2035,7 +2179,7 @@ int NewStore::omap_get_keys(
 }
 
 int NewStore::omap_get_values(
-  coll_t cid,                    ///< [in] Collection containing oid
+  const coll_t& cid,           ///< [in] Collection containing oid
   const ghobject_t &oid,       ///< [in] Object containing omap
   const set<string> &keys,     ///< [in] Keys to get
   map<string, bufferlist> *out ///< [out] Returned keys and values
@@ -2071,7 +2215,7 @@ int NewStore::omap_get_values(
 }
 
 int NewStore::omap_check_keys(
-  coll_t cid,                ///< [in] Collection containing oid
+  const coll_t& cid,       ///< [in] Collection containing oid
   const ghobject_t &oid,   ///< [in] Object containing omap
   const set<string> &keys, ///< [in] Keys to check
   set<string> *out         ///< [out] Subset of keys defined on oid
@@ -2110,8 +2254,8 @@ int NewStore::omap_check_keys(
 }
 
 ObjectMap::ObjectMapIterator NewStore::get_omap_iterator(
-  coll_t cid,              ///< [in] collection
-  const ghobject_t &oid  ///< [in] object
+  const coll_t& cid,       ///< [in] collection
+  const ghobject_t &oid    ///< [in] object
   )
 {
 

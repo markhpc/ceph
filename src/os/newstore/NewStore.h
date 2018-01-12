@@ -36,6 +36,11 @@
 
 #include "newstore_types.h"
 
+enum {
+  l_newstore_first = 762430,
+  l_newstore_kv_flush_lat,
+  l_newstore_last
+};
 
 // resurrected from 32e76839
 class NewStore : public ObjectStore {
@@ -104,11 +109,16 @@ public:
     int trim(int max=-1);
   };
 
-  struct Collection {
+  struct Collection : public CollectionImpl {
     NewStore *store;
     coll_t cid;
     cnode_t cnode;
     RWLock lock;
+
+    bool exists;
+
+    // pool options
+    pool_opts_t pool_opts;
 
     // cache onodes on a per-collection basis to avoid lock
     // contention.
@@ -116,9 +126,13 @@ public:
 
     OnodeRef get_onode(const ghobject_t& oid, bool create);
 
+    const coll_t &get_cid() override {
+      return cid;
+    }
+
     Collection(CephContext* cct, NewStore *ns, coll_t c);
   };
-  typedef ceph::shared_ptr<Collection> CollectionRef;
+  typedef boost::intrusive_ptr<Collection> CollectionRef;
 
   class OmapIteratorImpl : public ObjectMap::ObjectMapIteratorImpl {
     CollectionRef c;
@@ -511,8 +525,7 @@ private:
   deque<TransContext*> kv_queue, kv_committing;
   deque<TransContext*> wal_cleanup_queue, wal_cleaning;
 
-  Logger *logger;
-
+  PerfCounters *logger = nullptr;
   Mutex reap_lock;
   Cond reap_cond;
   list<CollectionRef> removed_collections;
@@ -539,7 +552,7 @@ private:
   int _open_collections();
   void _close_collections();
 
-  CollectionRef _get_collection(coll_t cid);
+  CollectionRef _get_collection(const coll_t& cid);
   void _queue_reap_collection(CollectionRef& c);
   void _reap_collections();
 
@@ -593,7 +606,11 @@ private:
 
 public:
   NewStore(CephContext *cct, const string& path);
-  ~NewStore();
+  ~NewStore() override;
+
+  string get_type() override {
+    return "newstore";
+  }
 
   bool needs_journal() { return false; };
   bool wants_journal() { return false; };
@@ -603,19 +620,24 @@ public:
 
   bool test_mount_in_use();
 
-  int mount();
-  int umount();
+  int mount() override;
+  int umount() override;
   void _sync();
+
+  int validate_hobject_key(const hobject_t &obj) const override {
+    return 0;
+  }
 
   unsigned get_max_object_name_length() {
     return 4096;
   }
-  unsigned get_max_attr_name_length() {
+
+  unsigned get_max_attr_name_length() override {
     return 256;  // arbitrary; there is no real limit internally
   }
 
-  int mkfs();
-  int mkjournal() {
+  int mkfs() override;
+  int mkjournal() override {
     return 0;
   }
 
@@ -629,9 +651,11 @@ public:
     return sharded;
   }
 
-  int statfs(struct statfs *buf);
+  int statfs(struct store_statfs_t *buf) override;
 
-  bool exists(coll_t cid, const ghobject_t& oid);
+  bool exists(const coll_t& cid, const ghobject_t& oid) override;
+  bool exists(CollectionHandle &c, const ghobject_t& oid) override;
+/*
   int stat(
     coll_t cid,
     const ghobject_t& oid,
@@ -645,6 +669,27 @@ public:
     bufferlist& bl,
     uint32_t op_flags = 0,
     bool allow_eio = false);
+*/
+  int set_collection_opts(
+    const coll_t& cid,
+    const pool_opts_t& opts) override;
+  int stat(
+    const coll_t& cid,
+    const ghobject_t& oid,
+    struct stat *st,
+    bool allow_eio = false) override;
+  int stat(
+    CollectionHandle &c,
+    const ghobject_t& oid,
+    struct stat *st,
+    bool allow_eio = false) override;
+  int read(
+    const coll_t& cid,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t len,
+    bufferlist& bl,
+    uint32_t op_flags = 0) override;
   int _do_read(
     OnodeRef o,
     uint64_t offset,
@@ -652,77 +697,110 @@ public:
     bufferlist& bl,
     uint32_t op_flags = 0);
 
-  int fiemap(coll_t cid, const ghobject_t& oid, uint64_t offset, size_t len, bufferlist& bl);
-  int getattr(coll_t cid, const ghobject_t& oid, const char *name, bufferptr& value);
-  int getattrs(coll_t cid, const ghobject_t& oid, map<string,bufferptr>& aset);
 
-  int list_collections(vector<coll_t>& ls);
-  bool collection_exists(coll_t c);
-  bool collection_empty(coll_t c);
+/*
+  int read(
+    CollectionHandle &c,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t len,
+    bufferlist& bl,
+    uint32_t op_flags = 0) override;
 
-  int collection_list(coll_t cid, ghobject_t start, ghobject_t end,
-		      bool sort_bitwise, int max,
-		      vector<ghobject_t> *ls, ghobject_t *next);
+  int _do_read(
+    Collection *c,
+    OnodeRef o,
+    uint64_t offset,
+    size_t len,
+    bufferlist& bl,
+    uint32_t op_flags = 0);
+*/
+
+  int fiemap(const coll_t& cid, const ghobject_t& oid, uint64_t offset, size_t len, bufferlist& bl) override;
+  int fiemap(const coll_t& cid, const ghobject_t& oid,
+             uint64_t offset, size_t len, map<uint64_t, uint64_t>& destmap) override;
+
+  int getattr(const coll_t& cid, const ghobject_t& oid, const char *name, bufferptr& value) override;
+  int getattrs(const coll_t& cid, const ghobject_t& oid, map<string,bufferptr>& aset) override;
+
+  int list_collections(vector<coll_t>& ls) override;
+  bool collection_exists(const coll_t& cid) override;
+  int collection_empty(const coll_t& cid, bool *empty) override;
+  int collection_bits(const coll_t& c) override;
+
+  int collection_list(const coll_t& cid, 
+                      const ghobject_t& start,
+                      const ghobject_t& end,
+		      int max,
+		      vector<ghobject_t> *ls, ghobject_t *next) override;
 
   int omap_get(
-    coll_t cid,                ///< [in] Collection containing oid
-    const ghobject_t &oid,   ///< [in] Object containing omap
-    bufferlist *header,      ///< [out] omap header
+    const coll_t& cid,           ///< [in] Collection containing oid
+    const ghobject_t &oid,       ///< [in] Object containing omap
+    bufferlist *header,          ///< [out] omap header
     map<string, bufferlist> *out /// < [out] Key to value map
-    );
+    ) override;
 
   /// Get omap header
   int omap_get_header(
-    coll_t cid,                ///< [in] Collection containing oid
-    const ghobject_t &oid,   ///< [in] Object containing omap
-    bufferlist *header,      ///< [out] omap header
+    const coll_t& cid,     ///< [in] Collection containing oid
+    const ghobject_t &oid, ///< [in] Object containing omap
+    bufferlist *header,    ///< [out] omap header
     bool allow_eio = false ///< [in] don't assert on eio
-    );
+    ) override;
 
   /// Get keys defined on oid
   int omap_get_keys(
-    coll_t cid,              ///< [in] Collection containing oid
+    const coll_t& cid,     ///< [in] Collection containing oid
     const ghobject_t &oid, ///< [in] Object containing omap
     set<string> *keys      ///< [out] Keys defined on oid
-    );
+    ) override;
 
   /// Get key values
   int omap_get_values(
-    coll_t cid,                    ///< [in] Collection containing oid
+    const coll_t& cid,           ///< [in] Collection containing oid
     const ghobject_t &oid,       ///< [in] Object containing omap
     const set<string> &keys,     ///< [in] Keys to get
     map<string, bufferlist> *out ///< [out] Returned keys and values
-    );
+    ) override;
 
   /// Filters keys into out which are defined on oid
   int omap_check_keys(
-    coll_t cid,                ///< [in] Collection containing oid
+    const coll_t& cid,       ///< [in] Collection containing oid
     const ghobject_t &oid,   ///< [in] Object containing omap
     const set<string> &keys, ///< [in] Keys to check
     set<string> *out         ///< [out] Subset of keys defined on oid
-    );
+    ) override;
 
   ObjectMap::ObjectMapIterator get_omap_iterator(
-    coll_t cid,              ///< [in] collection
+    const coll_t& cid,     ///< [in] collection
     const ghobject_t &oid  ///< [in] object
-    );
+    ) override;
 
-  void set_fsid(uuid_d u) {
+  void set_fsid(uuid_d u) override {
     fsid = u;
   }
-  uuid_d get_fsid() {
+  uuid_d get_fsid() override {
     return fsid;
   }
 
-  objectstore_perf_stat_t get_cur_stats() {
+  //FIXME: stolen from bluestore and almost certainly not right
+  uint64_t estimate_objects_overhead(uint64_t num_objects) override {
+    return num_objects * 300; //assuming per-object overhead is 300 bytes
+  }
+
+  objectstore_perf_stat_t get_cur_stats() override {
     return objectstore_perf_stat_t();
+  }
+  const PerfCounters* get_perf_counters() const override {
+    return logger;
   }
 
   int queue_transactions(
     Sequencer *osr,
     vector<Transaction>& tls,
     TrackedOpRef op = TrackedOpRef(),
-    ThreadPool::TPHandle *handle = NULL);
+    ThreadPool::TPHandle *handle = NULL) override;
 
 private:
   // --------------------------------------------------------

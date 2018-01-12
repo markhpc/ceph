@@ -340,7 +340,7 @@ int md_config_t::parse_config_files_impl(const std::list<std::string> &conf_file
       if (r >= 1) {
 	if (r < 2)
 	  gather = log;
-	//	cout << "config subsys " << subsys.get_name(o) << " log " << log << " gather " << gather << std::endl;
+//        cout << "config subsys " << subsys.get_name(o) << " log " << log << " gather " << gather << std::endl;
 	subsys.set_log_level(o, log);
 	subsys.set_gather_level(o, gather);
       }

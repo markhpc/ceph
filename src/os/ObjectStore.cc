@@ -76,6 +76,13 @@ ObjectStore *ObjectStore::create(CephContext *cct,
   if (type == "memstore") {
     return new MemStore(cct, data);
   }
+#if defined(WITH_NEWSTORE)
+  if (type == "newstore" &&
+      cct->check_experimental_feature_enabled("newstore")) {
+    lgeneric_dout(cct, 0) << __func__ << " data dir: " << data << dendl;
+    return new NewStore(cct, data);
+  }
+#endif
 #if defined(WITH_BLUESTORE)
   if (type == "bluestore") {
     return new BlueStore(cct, data);
