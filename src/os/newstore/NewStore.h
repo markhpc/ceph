@@ -31,9 +31,8 @@
 #include "common/WorkQueue.h"
 #include "os/ObjectStore.h"
 #include "os/fs/FS.h"
-#include "os/bluestore/aio.h"
 #include "kv/KeyValueDB.h"
-
+#include "os/bluestore/aio.h"
 #include "newstore_types.h"
 
 enum {

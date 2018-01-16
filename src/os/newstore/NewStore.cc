@@ -651,6 +651,7 @@ NewStore::Collection::Collection(CephContext* cct, NewStore *ns, const coll_t& c
   : store(ns),
     cid(c),
     lock("NewStore::Collection::lock"),
+    exists(true),
     onode_map(cct)
 {
 }
@@ -667,7 +668,7 @@ NewStore::OnodeRef NewStore::Collection::get_onode(
     if (!oid.match(cnode.bits, pgid.ps())) {
       lderr(store->cct) << __func__ << " oid " << oid << " not part of " << pgid
 	   << " bits " << cnode.bits << dendl;
-      assert(0);
+      ceph_abort();
     }
   }
 
@@ -2750,6 +2751,7 @@ void NewStore::_osr_reap_done(OpSequencer *osr)
 void NewStore::_aio_thread()
 {
   dout(10) << __func__ << " start" << dendl;
+
   while (!aio_stop) {
     dout(40) << __func__ << " polling" << dendl;
     int max = 16;
@@ -2758,17 +2760,19 @@ void NewStore::_aio_thread()
 					 aio, max);
     if (r < 0) {
       derr << __func__ << " got " << cpp_strerror(r) << dendl;
+      assert(0 == "got unexpected error from io_getevents");
     }
     if (r > 0) {
       dout(30) << __func__ << " got " << r << " completed aios" << dendl;
       for (int i = 0; i < r; ++i) {
 	TransContext *txc = static_cast<TransContext*>(aio[i]->priv);
-	int left = txc->num_aio--;
+	int left = --txc->num_aio;
 	dout(10) << __func__ << " finished aio " << aio[i] << " txc " << txc
 		 << " state " << txc->get_state_name() << ", "
 		 << left << " aios left" << dendl;
 	VOID_TEMP_FAILURE_RETRY(::close(aio[i]->fd));
 	if (left == 0) {
+          dout(10) << __func__ << " finished all aios, running _txc_state_proc(txc)" << dendl;
 	  _txc_state_proc(txc);
 	}
       }
@@ -3118,6 +3122,31 @@ void NewStore::_txc_aio_submit(TransContext *txc)
   assert(num > 0);
   txc->num_aio = num;
 
+  list<aio_t>::iterator e = txc->submitted_aios.begin();
+  txc->submitted_aios.splice(e, txc->pending_aios);
+  list<aio_t>::iterator p = txc->submitted_aios.begin();
+  assert(p != e);
+  void *priv = static_cast<void*>(txc);
+  int r, retries = 0;
+  r = aio_queue.submit_batch(p, e, num, priv, &retries);
+
+  if (retries)
+    derr << __func__ << " retries " << retries << dendl;
+  if (r < 0) {
+    derr << " aio submit got " << cpp_strerror(r) << dendl;
+    assert(r == 0);
+  }
+}
+
+
+/*
+void NewStore::_txc_aio_submit(TransContext *txc)
+{
+  int num = txc->pending_aios.size();
+  dout(10) << __func__ << " txc " << txc << " submitting " << num << dendl;
+  assert(num > 0);
+  txc->num_aio = num;
+
   // move these aside, and get our end iterator position now, as the
   // aios might complete as soon as they are submitted and queue more
   // wal aio's.
@@ -3155,6 +3184,7 @@ void NewStore::_txc_aio_submit(TransContext *txc)
     }
   }
 }
+*/
 
 int NewStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 {
@@ -3944,7 +3974,7 @@ int NewStore::_do_write(TransContext *txc,
 	aio_t& aio = txc->pending_aios.back();
 	bl.prepare_iov(&aio.iov);
 	txc->aio_bl.append(bl);
-	aio.pwritev(0, bl.length());
+	aio.pwritev(0, length);
 	dout(2) << __func__ << " prepared aio " << &aio << dendl;
       } else
 #endif
