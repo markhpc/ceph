@@ -42,6 +42,14 @@ if(WITH_NEWSTORE)
   )
 endif(WITH_NEWSTORE)
 
+if(WITH_PETSTORE)
+  list(APPEND libos_srcs
+    petstore/PetStore.cc
+    petstore/BufferListObject.cc
+    petstore/VectorObject.cc
+  )
+endif(WITH_PETSTORE)
+
 if(HAVE_LIBAIO)
   list(APPEND libos_srcs
     bluestore/KernelDevice.cc

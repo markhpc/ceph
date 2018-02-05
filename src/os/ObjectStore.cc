@@ -26,6 +26,9 @@
 #if defined(WITH_NEWSTORE)
 #include "newstore/NewStore.h"
 #endif
+#if defined(WITH_PETSTORE)
+#include "petstore/PetStore.h"
+#endif
 
 #include "kstore/KStore.h"
 
@@ -76,6 +79,13 @@ ObjectStore *ObjectStore::create(CephContext *cct,
   if (type == "memstore") {
     return new MemStore(cct, data);
   }
+#if defined(WITH_PETSTORE)
+  if (type == "petstore" &&
+      cct->check_experimental_feature_enabled("petstore")) {
+    lgeneric_dout(cct, 0) << __func__ << " data dir: " << data << dendl;
+    return new PetStore(cct, data);
+  }
+#endif
 #if defined(WITH_NEWSTORE)
   if (type == "newstore" &&
       cct->check_experimental_feature_enabled("newstore")) {

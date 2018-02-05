@@ -145,6 +145,9 @@
 /* define if newstore enabled */
 #cmakedefine WITH_NEWSTORE
 
+/* define if petstore enabled */
+#cmakedefine WITH_PETSTORE
+
 /* define if embedded enabled */
 #cmakedefine WITH_EMBEDDED
 

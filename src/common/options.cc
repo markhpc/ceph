@@ -3237,6 +3237,13 @@ std::vector<Option> get_global_options() {
     .set_description(""),
 
     // --------------------------
+    // petstore
+
+    Option("petstore_device_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(2_G)
+    .set_description(""),
+
+    // --------------------------
     // newstore
 
     Option("newstore_max_dir_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)

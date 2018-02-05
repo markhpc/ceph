@@ -232,6 +232,12 @@ if(WITH_NEWSTORE)
   set(HAVE_LIBAIO ${AIO_FOUND})
 endif()
 
+option(WITH_PETSTORE "Petstore OSD backend" ON)
+if(WITH_PETSTORE)
+  find_package(aio)
+  set(HAVE_LIBAIO ${AIO_FOUND})
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|amd64|x86_64|AMD64")
   option(WITH_SPDK "Enable SPDK" ON)
 else()

@@ -26,6 +26,7 @@
 struct RefCountedObject {
 private:
   mutable std::atomic<uint64_t> nref;
+protected:
   CephContext *cct;
 public:
   RefCountedObject(CephContext *c = NULL, int n=1) : nref(n), cct(c) {}
