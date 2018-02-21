@@ -3219,7 +3219,7 @@ BlueStore::Collection::Collection(BlueStore *ns, Cache *c, coll_t cid)
   : CollectionImpl(cid),
     store(ns),
     osr(new OpSequencer(store)),
-    cache(c),
+//    cache(c),
     lock("BlueStore::Collection::lock", true, false),
     exists(true),
     onode_space(c)
@@ -3390,9 +3390,9 @@ void BlueStore::Collection::split_cache(
   ldout(store->cct, 10) << __func__ << " to " << dest << dendl;
 
   // lock (one or both) cache shards
-  std::lock(cache->lock, dest->cache->lock);
-  std::lock_guard<std::recursive_mutex> l(cache->lock, std::adopt_lock);
-  std::lock_guard<std::recursive_mutex> l2(dest->cache->lock, std::adopt_lock);
+  std::lock(onode_space.cache->lock, dest->onode_space.cache->lock);
+  std::lock_guard<std::recursive_mutex> l(onode_space.cache->lock, std::adopt_lock);
+  std::lock_guard<std::recursive_mutex> l2(dest->onode_space.cache->lock, std::adopt_lock);
 
   int destbits = dest->cnode.bits;
   spg_t destpg;
@@ -3409,13 +3409,13 @@ void BlueStore::Collection::split_cache(
       ldout(store->cct, 20) << __func__ << " moving " << o << " " << o->oid
 			    << dendl;
 
-      cache->_rm_onode(p->second);
+      onode_space.cache->_rm_onode(p->second);
       p = onode_space.onode_map.erase(p);
 
       o->c = dest;
-      dest->cache->_add_onode(o, 1);
+      dest->onode_space.cache->_add_onode(o, 1);
       dest->onode_space.onode_map[o->oid] = o;
-      dest->onode_space.cache = dest->cache;
+//      dest->onode_space.cache = dest->cache;
 
       // move over shared blobs and buffers.  cover shared blobs from
       // both extent map and spanning blob map (the full extent map
@@ -3441,12 +3441,12 @@ void BlueStore::Collection::split_cache(
 	  dest->shared_blob_set.add(dest, sb);
 	}
 	sb->coll = dest;
-	if (dest->cache != cache) {
+	if (dest->onode_space.cache != onode_space.cache) {
 	  for (auto& i : sb->bc.buffer_map) {
 	    if (!i.second->is_writing()) {
 	      ldout(store->cct, 20) << __func__ << "   moving " << *i.second
 				    << dendl;
-	      dest->cache->_move_buffer(cache, i.second.get());
+	      dest->onode_space.cache->_move_buffer(onode_space.cache, i.second.get());
 	    }
 	  }
 	}

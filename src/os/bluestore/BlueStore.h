@@ -408,7 +408,7 @@ public:
       return l.get_sbid() == r.get_sbid();
     }
     inline Cache* get_cache() {
-      return coll ? coll->cache : nullptr;
+      return coll ? coll->get_cache() : nullptr;
     }
     inline SharedBlobSet* get_parent() {
       return coll ? &(coll->shared_blob_set) : nullptr;
@@ -1343,7 +1343,7 @@ public:
   struct Collection : public CollectionImpl {
     BlueStore *store;
     OpSequencerRef osr;
-    Cache *cache;       ///< our cache shard
+//    Cache *cache;       ///< our cache shard
     bluestore_cnode_t cnode;
     RWLock lock;
 
@@ -1397,6 +1397,10 @@ public:
 
     bool flush_commit(Context *c) override;
     void flush() override;
+
+    Cache* get_cache() {
+      return onode_space.cache;
+    }
 
     Collection(BlueStore *ns, Cache *ca, coll_t c);
   };
