@@ -923,7 +923,7 @@ void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
       assert(num == 1);
     }
     o->get();  // paranoia
-    o->c->onode_map.remove(o->oid);
+    o->c->onode_space.remove(o->oid);
     o->put();
     --num;
   }
@@ -1220,7 +1220,7 @@ void BlueStore::TwoQCache::_trim(uint64_t onode_max, uint64_t buffer_max)
       assert(num == 1);
     }
     o->get();  // paranoia
-    o->c->onode_map.remove(o->oid);
+    o->c->onode_space.remove(o->oid);
     o->put();
     --num;
   }
@@ -3222,7 +3222,7 @@ BlueStore::Collection::Collection(BlueStore *ns, Cache *c, coll_t cid)
     cache(c),
     lock("BlueStore::Collection::lock", true, false),
     exists(true),
-    onode_map(c)
+    onode_space(c)
 {
   osr->shard = cid.hash_to_shard(ns->m_finisher_num);
 }
@@ -3336,7 +3336,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
     }
   }
 
-  OnodeRef o = onode_map.lookup(oid);
+  OnodeRef o = onode_space.lookup(oid);
   if (o)
     return o;
 
@@ -3381,7 +3381,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
     }
   }
   o.reset(on);
-  return onode_map.add(oid, o);
+  return onode_space.add(oid, o);
 }
 
 void BlueStore::Collection::split_cache(
@@ -3399,8 +3399,8 @@ void BlueStore::Collection::split_cache(
   bool is_pg = dest->cid.is_pg(&destpg);
   assert(is_pg);
 
-  auto p = onode_map.onode_map.begin();
-  while (p != onode_map.onode_map.end()) {
+  auto p = onode_space.onode_map.begin();
+  while (p != onode_space.onode_map.end()) {
     if (!p->second->oid.match(destbits, destpg.pgid.ps())) {
       // onode does not belong to this child
       ++p;
@@ -3410,12 +3410,12 @@ void BlueStore::Collection::split_cache(
 			    << dendl;
 
       cache->_rm_onode(p->second);
-      p = onode_map.onode_map.erase(p);
+      p = onode_space.onode_map.erase(p);
 
       o->c = dest;
       dest->cache->_add_onode(o, 1);
-      dest->onode_map.onode_map[o->oid] = o;
-      dest->onode_map.cache = dest->cache;
+      dest->onode_space.onode_map[o->oid] = o;
+      dest->onode_space.cache = dest->cache;
 
       // move over shared blobs and buffers.  cover shared blobs from
       // both extent map and spanning blob map (the full extent map
@@ -6458,7 +6458,7 @@ void BlueStore::_reap_collections()
   while (p != removed_colls.end()) {
     CollectionRef c = *p;
     dout(10) << __func__ << " " << c << " " << c->cid << dendl;
-    if (c->onode_map.map_any([&](OnodeRef o) {
+    if (c->onode_space.map_any([&](OnodeRef o) {
 	  assert(!o->exists);
 	  if (o->flushing_count.load()) {
 	    dout(10) << __func__ << " " << c << " " << c->cid << " " << o->oid
@@ -6470,7 +6470,7 @@ void BlueStore::_reap_collections()
       ++p;
       continue;
     }
-    c->onode_map.clear();
+    c->onode_space.clear();
     p = removed_colls.erase(p);
     dout(10) << __func__ << " " << c << " " << c->cid << " done" << dendl;
   }
@@ -10747,7 +10747,7 @@ int BlueStore::_do_remove(
 	   << maybe_unshared_blobs << dendl;
   ghobject_t nogen = o->oid;
   nogen.generation = ghobject_t::NO_GEN;
-  OnodeRef h = c->onode_map.lookup(nogen);
+  OnodeRef h = c->onode_space.lookup(nogen);
 
   if (!h || !h->exists) {
     return 0;
@@ -11301,7 +11301,7 @@ int BlueStore::_rename(TransContext *txc,
 
   // this adjusts oldo->{oid,key}, and reset oldo to a fresh empty
   // Onode in the old slot
-  c->onode_map.rename(oldo, old_oid, new_oid, new_okey);
+  c->onode_space.rename(oldo, old_oid, new_oid, new_okey);
   r = 0;
 
  out:
@@ -11358,10 +11358,10 @@ int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
     }
     size_t nonexistent_count = 0;
     assert((*c)->exists);
-    if ((*c)->onode_map.map_any([&](OnodeRef o) {
+    if ((*c)->onode_space.map_any([&](OnodeRef o) {
         if (o->exists) {
           dout(10) << __func__ << " " << o->oid << " " << o
-                   << " exists in onode_map" << dendl;
+                   << " exists in onode_space" << dendl;
           return true;
         }
         ++nonexistent_count;
@@ -11384,7 +11384,7 @@ int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
       bool exists = (!next.is_max());
       for (auto it = ls.begin(); !exists && it < ls.end(); ++it) {
         dout(10) << __func__ << " oid " << *it << dendl;
-        auto onode = (*c)->onode_map.lookup(*it);
+        auto onode = (*c)->onode_space.lookup(*it);
         exists = !onode || onode->exists;
         if (exists) {
           dout(10) << __func__ << " " << *it
@@ -11443,7 +11443,7 @@ int BlueStore::_split_collection(TransContext *txc,
   assert(is_pg);
 
   // the destination should initially be empty.
-  assert(d->onode_map.empty());
+  assert(d->onode_space.empty());
   assert(d->shared_blob_set.empty());
   assert(d->cnode.bits == bits);
 
@@ -11647,15 +11647,15 @@ void BlueStore::_flush_cache()
     assert(i->empty());
   }
   for (auto& p : coll_map) {
-    if (!p.second->onode_map.empty()) {
+    if (!p.second->onode_space.empty()) {
       derr << __func__ << "stray onodes on " << p.first << dendl;
-      p.second->onode_map.dump(cct, 0);
+      p.second->onode_space.dump(cct, 0);
     }
     if (!p.second->shared_blob_set.empty()) {
       derr << __func__ << " stray shared blobs on " << p.first << dendl;
       p.second->shared_blob_set.dump(cct, 0);
     }
-    assert(p.second->onode_map.empty());
+    assert(p.second->onode_space.empty());
     assert(p.second->shared_blob_set.empty());
   }
   coll_map.clear();
