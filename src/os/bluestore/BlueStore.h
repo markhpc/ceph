@@ -1118,6 +1118,30 @@ public:
 #endif
   };
 
+  struct NullCache : public Cache {
+  public:
+    NullCache(CephContext* cct) : Cache(cct) {}
+    uint64_t _get_num_onodes() override {
+      return 0;
+    }
+    void _add_onode(OnodeRef& o, int level) override {}
+    void _rm_onode(OnodeRef& o) {}
+    void _touch_onode(OnodeRef& o) {}
+    uint64_t _get_buffer_bytes() {
+      return 0;
+    }
+    void _add_buffer(Buffer *b, int level, Buffer *near) override {}
+    void _rm_buffer(Buffer *b) override {}
+    void _move_buffer(Cache *src, Buffer *b) override {}
+    void _adjust_buffer_size(Buffer *b, int64_t delta) override {}
+    void _touch_buffer(Buffer *b) override {}
+    void _trim(uint64_t onode_max, uint64_t buffer_max) {}
+    void add_stats(uint64_t *onodes, uint64_t *extents,
+                   uint64_t *blobs,
+                   uint64_t *buffers,
+                   uint64_t *bytes) override {}
+  };
+
   /// simple LRU cache for onodes and buffers
   struct LRUCache : public Cache {
   private:

@@ -3701,7 +3701,7 @@ std::vector<Option> get_global_options() {
 
     Option("bluestore_cache_type", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("2q")
-    .set_enum_allowed({"2q", "lru"})
+    .set_enum_allowed({"2q", "lru", "null"})
     .set_description("Cache replacement algorithm"),
 
     Option("bluestore_2q_cache_kin_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)

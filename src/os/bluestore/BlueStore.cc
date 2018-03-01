@@ -769,7 +769,9 @@ BlueStore::Cache *BlueStore::Cache::create(CephContext* cct, string type,
 {
   Cache *c = nullptr;
 
-  if (type == "lru")
+  if (type == "null")
+    c = new NullCache(cct);
+  else if (type == "lru")
     c = new LRUCache(cct);
   else if (type == "2q")
     c = new TwoQCache(cct);
