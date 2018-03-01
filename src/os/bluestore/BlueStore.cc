@@ -1606,6 +1606,78 @@ void BlueStore::OnodeSpace::rename(
   o->key = new_okey;
 }
 
+void BlueStore::OnodeSpace::split(Collection *coll, Collection *dest)
+{
+  ldout(cache->cct, 10) << __func__ << " to " << dest << dendl;
+
+  auto ds = dest->onode_space;
+
+  // lock (one or both) cache shards
+  std::lock(cache->lock, ds.cache->lock);
+  std::lock_guard<std::recursive_mutex> l(cache->lock, std::adopt_lock);
+  std::lock_guard<std::recursive_mutex> l2(ds.cache->lock, std::adopt_lock);
+
+  int destbits = dest->cnode.bits;
+  spg_t destpg;
+  bool is_pg = dest->cid.is_pg(&destpg);
+  assert(is_pg);
+
+  auto p = onode_map.begin();
+  while (p != onode_map.end()) {
+    if (!p->second->oid.match(destbits, destpg.pgid.ps())) {
+      // onode does not belong to this child
+      ++p;
+      continue;
+    }
+    OnodeRef o = p->second;
+    ldout(cache->cct, 20) << __func__ << " moving " << o << " " << o->oid
+                            << dendl;
+
+    cache->_rm_onode(p->second);
+    p = onode_map.erase(p);
+
+    o->c = dest;
+    ds.cache->_add_onode(o, 1);
+    ds.onode_map[o->oid] = o;
+
+    // move over shared blobs and buffers.  cover shared blobs from
+    // both extent map and spanning blob map (the full extent map
+    // may not be faulted in)
+    vector<SharedBlob*> sbvec;
+    for (auto& e : o->extent_map.extent_map) {
+      sbvec.push_back(e.blob->shared_blob.get());
+    }
+    for (auto& b : o->extent_map.spanning_blob_map) {
+      sbvec.push_back(b.second->shared_blob.get());
+    }
+    for (auto sb : sbvec) {
+      if (sb->coll == dest) {
+        ldout(cache->cct, 20) << __func__ << "  already moved " << *sb
+                              << dendl;
+          continue;
+      }
+      ldout(cache->cct, 20) << __func__ << "  moving " << *sb << dendl;
+      if (sb->get_sbid()) {
+        ldout(cache->cct, 20) << __func__
+                                << "   moving registration " << *sb << dendl;
+        coll->shared_blob_set.remove(sb);
+        dest->shared_blob_set.add(dest, sb);
+      }
+      sb->coll = dest;
+      if (ds.cache == cache)
+        continue;
+
+      for (auto& i : sb->bc.buffer_map) {
+        if (!i.second->is_writing()) {
+          ldout(cache->cct, 20) << __func__ << "   moving " << *i.second
+                                  << dendl;
+          ds.cache->_move_buffer(cache, i.second.get());
+        }
+      }
+    }
+  }
+}
+
 bool BlueStore::OnodeSpace::map_any(std::function<bool(OnodeRef)> f)
 {
   std::lock_guard<std::recursive_mutex> l(cache->lock);
@@ -3384,75 +3456,9 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   return onode_space.add(oid, o);
 }
 
-void BlueStore::Collection::split_cache(
-  Collection *dest)
+void BlueStore::Collection::split_cache(Collection *dest)
 {
-  ldout(store->cct, 10) << __func__ << " to " << dest << dendl;
-
-  // lock (one or both) cache shards
-  std::lock(onode_space.cache->lock, dest->onode_space.cache->lock);
-  std::lock_guard<std::recursive_mutex> l(onode_space.cache->lock, std::adopt_lock);
-  std::lock_guard<std::recursive_mutex> l2(dest->onode_space.cache->lock, std::adopt_lock);
-
-  int destbits = dest->cnode.bits;
-  spg_t destpg;
-  bool is_pg = dest->cid.is_pg(&destpg);
-  assert(is_pg);
-
-  auto p = onode_space.onode_map.begin();
-  while (p != onode_space.onode_map.end()) {
-    if (!p->second->oid.match(destbits, destpg.pgid.ps())) {
-      // onode does not belong to this child
-      ++p;
-    } else {
-      OnodeRef o = p->second;
-      ldout(store->cct, 20) << __func__ << " moving " << o << " " << o->oid
-			    << dendl;
-
-      onode_space.cache->_rm_onode(p->second);
-      p = onode_space.onode_map.erase(p);
-
-      o->c = dest;
-      dest->onode_space.cache->_add_onode(o, 1);
-      dest->onode_space.onode_map[o->oid] = o;
-//      dest->onode_space.cache = dest->cache;
-
-      // move over shared blobs and buffers.  cover shared blobs from
-      // both extent map and spanning blob map (the full extent map
-      // may not be faulted in)
-      vector<SharedBlob*> sbvec;
-      for (auto& e : o->extent_map.extent_map) {
-	sbvec.push_back(e.blob->shared_blob.get());
-      }
-      for (auto& b : o->extent_map.spanning_blob_map) {
-	sbvec.push_back(b.second->shared_blob.get());
-      }
-      for (auto sb : sbvec) {
-	if (sb->coll == dest) {
-	  ldout(store->cct, 20) << __func__ << "  already moved " << *sb
-				<< dendl;
-	  continue;
-	}
-	ldout(store->cct, 20) << __func__ << "  moving " << *sb << dendl;
-	if (sb->get_sbid()) {
-	  ldout(store->cct, 20) << __func__
-				<< "   moving registration " << *sb << dendl;
-	  shared_blob_set.remove(sb);
-	  dest->shared_blob_set.add(dest, sb);
-	}
-	sb->coll = dest;
-	if (dest->onode_space.cache != onode_space.cache) {
-	  for (auto& i : sb->bc.buffer_map) {
-	    if (!i.second->is_writing()) {
-	      ldout(store->cct, 20) << __func__ << "   moving " << *i.second
-				    << dendl;
-	      dest->onode_space.cache->_move_buffer(onode_space.cache, i.second.get());
-	    }
-	  }
-	}
-      }
-    }
-  }
+  onode_space.split(this, dest);
 }
 
 // =======================================================

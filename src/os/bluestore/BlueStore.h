@@ -1331,6 +1331,8 @@ public:
     void clear();
     bool empty();
 
+    void split(Collection *coll, Collection *dest);
+
     void dump(CephContext *cct, int lvl);
 
     /// return true if f true for any item
