@@ -3195,6 +3195,10 @@ std::vector<Option> get_global_options() {
     .set_default(4_K)
     .set_description("The block size for index partitions. (0 = rocksdb default)"),
 
+    Option("rocksdb_high_pri_pool_ratio", Option::TYPE_FLOAT, Option::LEVEL_DEV)
+    .set_default(0.0)
+    .set_description("The amount of cache rocksdb should reserve for high priority entries.  Currently only works with rocksdb's LRU cache."),
+
     Option("mon_rocksdb_options", Option::TYPE_STR, Option::LEVEL_ADVANCED)
     .set_default("write_buffer_size=33554432,compression=kNoCompression")
     .set_description(""),

@@ -401,7 +401,9 @@ int RocksDBStore::load_rocksdb_options(bool create_if_missing, rocksdb::Options&
     if (g_conf->rocksdb_cache_type == "lru") {
       bbt_opts.block_cache = rocksdb::NewLRUCache(
         block_cache_size,
-        g_conf->rocksdb_cache_shard_bits);
+        g_conf->rocksdb_cache_shard_bits, 
+        false,
+        g_conf->get_val<double>("rocksdb_high_pri_pool_ratio"));
     } else if (g_conf->rocksdb_cache_type == "clock") {
       bbt_opts.block_cache = rocksdb::NewClockCache(
         block_cache_size,
