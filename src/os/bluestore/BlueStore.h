@@ -1948,10 +1948,13 @@ private:
     Cond cond;
     Mutex lock;
     bool stop = false;
+    utime_t last_cache_balance;
+    utime_t next_cache_balance;
   public:
     explicit MempoolThread(BlueStore *s)
       : store(s),
-	lock("BlueStore::MempoolThread::lock") {}
+	lock("BlueStore::MempoolThread::lock"),
+        next_cache_balance(ceph_clock_now()) {}
     void *entry() override;
     void init() {
       assert(stop == false);
@@ -1964,6 +1967,8 @@ private:
       lock.Unlock();
       join();
     }
+  private:
+    void _balance_cache();
   } mempool_thread;
 
   // --------------------------------------------------------

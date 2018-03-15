@@ -23,6 +23,14 @@ using std::vector;
  */
 class KeyValueDB {
 public:
+
+  // Hint for requesting memory for low/high priority cache items.
+  enum CacheHint {
+    CACHE_HINT_ALL,
+    CACHE_HINT_HIGH,
+    CACHE_HINT_LAST,
+  };
+
   /*
    *  See RocksDB's definition of a column family(CF) and how to use it.
    *  The interfaces of KeyValueDB is extended, when a column family is created.
@@ -355,6 +363,22 @@ public:
   }
 
   virtual int set_cache_size(uint64_t) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int64_t request_new_cache_size(CacheHint hint) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int set_cache_capacity(int64_t) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int set_cache_high_pri_pool_ratio(double ratio) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int64_t get_cache_capacity() {
     return -EOPNOTSUPP;
   }
 

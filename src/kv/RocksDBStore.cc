@@ -1239,6 +1239,85 @@ void RocksDBStore::compact_range(const string& start, const string& end)
   db->CompactRange(options, &cstart, &cend);
 }
 
+int64_t RocksDBStore::request_new_cache_size(CacheHint hint)
+{
+  switch (hint) {
+  case CACHE_HINT_ALL:
+    {
+      auto cache = bbt_opts.block_cache; 
+      uint64_t cap = cache->GetCapacity();
+      uint64_t usage = cache->GetUsage();
+
+      dout(1) << __func__ << " cap: " << cap << " usage: " << usage
+              << dendl;
+
+      // Add a chunk of headroom and round up to the near chunk
+      int64_t chunk = 16777216;
+      int64_t val = usage + chunk;
+      int64_t r = (val) % chunk;
+      if (r > 0)
+        val = val + chunk - r;
+
+      // If the cache gets flushed, resize down slowly in increments of chunk.
+      return (cap > val) ? cap - chunk : val;  
+    }
+    break;
+
+  case CACHE_HINT_HIGH:
+    {
+      if (g_conf->rocksdb_cache_type != "lru") {
+        return 0;
+      }
+      // Only LRU cache supports high/low priority items
+      auto cache = bbt_opts.block_cache;
+      uint64_t cap = cache->GetCapacity();
+      uint64_t usage = cache->GetUsage();
+      uint64_t h_cap = cache->GetHighPriPoolCapacity();
+      uint64_t h_usage = cache->GetHighPriPoolUsage();
+
+      dout(1) << __func__ << " cap: " << cap << " usage: " << usage
+              << " h_cap: " << h_cap << " h_usage: " << h_usage << dendl;
+
+      // Add a chunk of headroom and round up to the near chunk 
+      int64_t chunk = 16777216;
+      int64_t val = h_usage + chunk;
+      int64_t r = (val) % chunk;
+      if (r > 0)
+        val = val + chunk - r;
+
+      // If the cache gets flushed, resize down slowly in increments of chunk.
+      return (h_cap > val) ? h_cap - chunk : val; 
+    } 
+    break;
+  default:
+    return -EOPNOTSUPP;
+  }
+  return -EOPNOTSUPP;
+}
+
+int RocksDBStore::set_cache_capacity(int64_t capacity) {
+  if (capacity < 0) {
+    return -EINVAL;
+  }
+  bbt_opts.block_cache->SetCapacity((size_t) capacity);
+  return 0;
+}
+
+int RocksDBStore::set_cache_high_pri_pool_ratio(double ratio) {
+  if (g_conf->rocksdb_cache_type != "lru") {
+    return -EOPNOTSUPP;
+  }
+  dout(1) << __func__ << " osd ratio: " 
+          << bbt_opts.block_cache->GetHighPriPoolRatio() << " new ratio: "
+          << ratio << dendl;
+  bbt_opts.block_cache->SetHighPriPoolRatio(ratio);
+  return 0;
+}
+
+int64_t RocksDBStore::get_cache_capacity() {
+  return bbt_opts.block_cache->GetCapacity();
+}
+
 RocksDBStore::RocksDBWholeSpaceIteratorImpl::~RocksDBWholeSpaceIteratorImpl()
 {
   delete dbiter;

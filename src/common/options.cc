@@ -3748,6 +3748,35 @@ std::vector<Option> get_global_options() {
       "bluestore_cache_size is below bluestore_cache_kv_min "
       "then this option has no effect."),
 
+    Option("bluestore_cache_meta_min", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(128_M)
+    .set_description("Minimum memory (bytes) of bluestore_cache_size to devote to kv database (rocksdb)")
+    .set_long_description("A negative value means using bluestore_cache_meta_ratio "
+      "and bluestore_cache_kv_ratio instead of calculating these ratios using "
+      "bluestore_cache_size_* and bluestore_cache_kv_min.  If "
+      "bluestore_cache_size is below bluestore_cache_kv_min "
+      "then this option has no effect."),
+
+    Option("bluestore_cache_data_min", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(0)
+    .set_description("Minimum memory (bytes) of bluestore_cache_size to devote to kv database (rocksdb)")
+    .set_long_description("A negative value means using bluestore_cache_meta_ratio "
+      "and bluestore_cache_kv_ratio instead of calculating these ratios using "
+      "bluestore_cache_size_* and bluestore_cache_kv_min.  If "
+      "bluestore_cache_size is below bluestore_cache_kv_min "
+      "then this option has no effect."),
+
+    Option("bluestore_cache_autotune", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(true)
+    .add_see_also("bluestore_cache_size")
+    .add_see_also("bluestore_cache_meta_ratio")
+//    .add_see_also("bluestore_cache_meta_min"
+//    .add_see_also("bluestore_cache_kv_ratio")
+//    .add_see_also("bluestore_cache_kv_min")
+//    .add_see_also("bluestore_cache_data_ratio")
+//    .add_see_also("bluestore_cache_data_min"
+    .set_description("Automatically tune the ratio of caches while respecting min values."),
+
     Option("bluestore_kvbackend", Option::TYPE_STR, Option::LEVEL_DEV)
     .set_default("rocksdb")
     .add_tag("mkfs")

@@ -473,6 +473,11 @@ err:
     return 0;
   }
 
+  int64_t request_new_cache_size(CacheHint hint);
+  int set_cache_capacity(int64_t capacity);
+  int set_cache_high_pri_pool_ratio(double ratio);
+  int64_t get_cache_capacity();
+
   WholeSpaceIterator get_wholespace_iterator() override;
 };
 

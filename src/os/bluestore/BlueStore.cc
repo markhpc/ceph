@@ -3465,10 +3465,23 @@ void BlueStore::Collection::split_cache(Collection *dest)
 
 // =======================================================
 
+// MempoolThread
+
+#undef dout_prefix
+#define dout_prefix *_dout << "bluestore.MempoolThread(" << this << ") "
+
 void *BlueStore::MempoolThread::entry()
 {
   Mutex::Locker l(lock);
   while (!stop) {
+
+    // Before we trim, check and see if it's time to rebalance
+    bool autotune = store->cct->_conf->get_val<bool>("bluestore_cache_autotune");
+    if (autotune && next_cache_balance < ceph_clock_now()) {
+      _balance_cache();
+      next_cache_balance += 5;
+    }
+
     uint64_t meta_bytes =
       mempool::bluestore_cache_other::allocated_bytes() +
       mempool::bluestore_cache_onode::allocated_bytes();
@@ -3493,13 +3506,97 @@ void *BlueStore::MempoolThread::entry()
     }
 
     store->_update_cache_logger();
-
+    
     utime_t wait;
     wait += store->cct->_conf->bluestore_cache_trim_interval;
     cond.WaitInterval(lock, wait);
   }
   stop = false;
   return NULL;
+}
+
+void BlueStore::MempoolThread::_balance_cache() {
+  // Get the amount of available memory we can allocate
+  uint64_t mem_avail = store->cache_size;
+
+  // Create target byte values based on minimums
+  int64_t target_kv_bytes = store->cct->_conf->get_val<int64_t>("bluestore_cache_kv_min");
+  mem_avail -= target_kv_bytes;
+  int64_t target_meta_bytes = store->cct->_conf->get_val<int64_t>("bluestore_cache_meta_min");
+  mem_avail -= target_meta_bytes;
+  int64_t target_data_bytes = store->cct->_conf->get_val<int64_t>("bluestore_cache_data_min");
+  mem_avail -= target_data_bytes;
+
+  // Assert if the minimum values exceed the amount of memory available.
+  if (mem_avail < 0)
+    assert(0 == "bs_cache_size too small to fulfill min cache sizes.");
+
+  // If there is memory remaining, give it to kv high priority pool first.
+  int64_t kv_hp_bytes = store->db->request_new_cache_size(KeyValueDB::CACHE_HINT_HIGH);
+  if (kv_hp_bytes > target_kv_bytes) {
+    uint64_t extra = kv_hp_bytes - target_kv_bytes;
+    extra = (mem_avail < extra) ? mem_avail : extra;
+    target_kv_bytes += extra;
+    mem_avail -= extra;
+    ldout(store->cct, 1) << __func__ << " high pri kv request: " << kv_hp_bytes
+                         << " kv assigned: " << target_kv_bytes << dendl;
+  }
+  
+  // If there is memory remaining, give it to bluestore meta cache next.
+  // TODO: balance this with low priority kv cache for omap!
+  uint64_t bs_meta_bytes = mempool::bluestore_cache_onode::allocated_bytes() +
+                           mempool::bluestore_cache_other::allocated_bytes();
+  if (bs_meta_bytes > target_meta_bytes) {
+    uint64_t extra = bs_meta_bytes - target_meta_bytes;
+    extra = (mem_avail < extra) ? mem_avail : extra;
+    target_meta_bytes += extra;
+    mem_avail -= extra;
+    ldout(store->cct, 1) << __func__ << " bs meta request: " << bs_meta_bytes  
+                         << " bs meta assigned: " << target_meta_bytes << dendl;
+  }
+
+  // If there is memory remaining, give it to the kv_cache for omap and compaction. 
+  int64_t kv_all_bytes = store->db->request_new_cache_size(KeyValueDB::CACHE_HINT_ALL);
+  if (kv_all_bytes > target_kv_bytes) {
+    uint64_t extra = kv_all_bytes - target_kv_bytes;
+    extra = (mem_avail < extra) ? mem_avail : extra;
+    target_kv_bytes += extra;
+    mem_avail -= extra;
+    ldout(store->cct, 1) << __func__ << " all kv request: " << kv_all_bytes
+                         << " kv assigned: " << target_kv_bytes << dendl;
+  }
+
+  // If there is memory remaining, give the rest to the bluestore data cache.
+  uint64_t bs_data_bytes = 0;
+  for (auto i : store->cache_shards) {
+    bs_data_bytes += i->_get_buffer_bytes();
+  }
+  target_data_bytes += mem_avail;
+  mem_avail -= mem_avail;
+  ldout(store->cct, 1) << __func__ << " bs data request: " << bs_data_bytes
+                       << " bs data assigned: " << target_data_bytes << dendl;
+
+  ldout(store->cct, 1) << __func__ << " mem_avail: " << mem_avail << dendl;
+
+  // Set the ratios
+  store->cache_kv_ratio = (double) target_kv_bytes / store->cache_size;
+  store->cache_meta_ratio = (double) target_meta_bytes / store->cache_size; 
+  store->cache_data_ratio = (double) target_data_bytes / store->cache_size;
+
+  ldout(store->cct, 1) << __func__ << " cache_kv_ratio: " << store->cache_kv_ratio 
+                       << " cache_meta_ratio: " << store->cache_meta_ratio
+                       << " cache_data_ratio: " << store->cache_data_ratio << dendl;
+
+  // Set the kv high priority ratio based on the kv cache requested and assigned. 
+  double kv_hp_ratio = 0;
+  if (kv_hp_bytes > 0 && target_kv_bytes > 0) { 
+    kv_hp_ratio =
+      (kv_hp_bytes >= target_kv_bytes) ? 1 : kv_hp_bytes / (double) target_kv_bytes;
+  }
+
+  // Set the db
+  store->db->set_cache_capacity(target_kv_bytes);
+  store->db->set_cache_high_pri_pool_ratio(kv_hp_ratio);
 }
 
 // =======================================================
@@ -3877,21 +3974,6 @@ int BlueStore::_set_cache_sizes()
   cache_meta_ratio = cct->_conf->bluestore_cache_meta_ratio;
   cache_kv_ratio = cct->_conf->bluestore_cache_kv_ratio;
 
-  double cache_kv_max = cct->_conf->bluestore_cache_kv_max;
-  double cache_kv_max_ratio = 0;
-
-  // if cache_kv_max is negative, disable it
-  if (cache_size > 0 && cache_kv_max >= 0) {
-    cache_kv_max_ratio = (double) cache_kv_max / (double) cache_size;
-    if (cache_kv_max_ratio < 1.0 && cache_kv_max_ratio < cache_kv_ratio) {
-      dout(1) << __func__ << " max " << cache_kv_max_ratio
-            << " < ratio " << cache_kv_ratio
-            << dendl;
-      cache_meta_ratio = cache_meta_ratio + cache_kv_ratio - cache_kv_max_ratio;
-      cache_kv_ratio = cache_kv_max_ratio;
-    }
-  }  
-
   cache_data_ratio =
     (double)1.0 - (double)cache_meta_ratio - (double)cache_kv_ratio;
 
@@ -3912,6 +3994,26 @@ int BlueStore::_set_cache_sizes()
 	 << dendl;
     return -EINVAL;
   }
+
+  double cache_kv_min = cct->_conf->bluestore_cache_kv_min;
+  double cache_kv_min_ratio = 0;
+
+  // if cache_kv_min is negative, disable it
+  if (cache_size > 0 && cache_kv_min >= 0) {
+    cache_kv_min_ratio = std::min((double)cache_kv_min / (double)cache_size,
+				  (double)1.0);
+    if (cache_kv_min_ratio > cache_kv_ratio) {
+      dout(1) << __func__ << " kv_min_ratio " << cache_kv_min_ratio
+            << " > kv_ratio " << cache_kv_ratio << dendl;
+      cache_kv_ratio = cache_kv_min_ratio;
+      cache_meta_ratio = std::min((double)cache_meta_ratio,
+				  (double)1.0 - cache_kv_ratio);
+    }
+  }
+
+  cache_data_ratio =
+    (double)1.0 - (double)cache_meta_ratio - (double)cache_kv_ratio;
+
   if (cache_data_ratio < 0) {
     // deal with floating point imprecision
     cache_data_ratio = 0;
