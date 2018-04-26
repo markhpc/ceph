@@ -36,6 +36,7 @@
 #include "common/bloom_filter.hpp"
 #include "common/Finisher.h"
 #include "common/perf_counters.h"
+#include "common/PriorityCache.h"
 #include "compressor/Compressor.h"
 #include "os/ObjectStore.h"
 
@@ -1923,22 +1924,135 @@ private:
 
   // cache trim control
   uint64_t cache_size = 0;      ///< total cache size
-  float cache_meta_ratio = 0;   ///< cache ratio dedicated to metadata
-  float cache_kv_ratio = 0;     ///< cache ratio dedicated to kv (e.g., rocksdb)
-  float cache_data_ratio = 0;   ///< cache ratio dedicated to object data
+  double cache_meta_ratio = 0;   ///< cache ratio dedicated to metadata
+  double cache_kv_ratio = 0;     ///< cache ratio dedicated to kv (e.g., rocksdb)
+  double cache_data_ratio = 0;   ///< cache ratio dedicated to object data
+  uint64_t cache_meta_min = 0;   ///< cache min dedicated to metadata
+  uint64_t cache_kv_min = 0;     ///< cache min dedicated to kv (e.g., rocksdb)
+  uint64_t cache_data_min = 0;   ///< cache min dedicated to object data
 
   std::mutex vstatfs_lock;
   volatile_statfs vstatfs;
 
   struct MempoolThread : public Thread {
+  public:
     BlueStore *store;
+
     Cond cond;
     Mutex lock;
     bool stop = false;
+    utime_t last_cache_balance;
+    utime_t next_cache_balance;
+
+    struct MempoolCache : public PriorityCache::PriCache {
+      BlueStore *store;
+      int64_t cache_bytes[PriorityCache::Priority::LAST+1];
+      int64_t cache_min;
+      double cache_ratio;
+
+      MempoolCache(BlueStore *s) : store(s) {};
+
+      virtual uint64_t _get_used_bytes() const = 0;
+
+      virtual int64_t request_cache_bytes(PriorityCache::Priority pri) const {
+        switch (pri) {
+        // All cache items are currently shoved into PRI3
+        case PriorityCache::Priority::PRI3:
+          {
+            int64_t usage = _get_used_bytes();
+            return PriorityCache::get_chunk(usage);
+          }
+        default:
+          break;
+        }
+        return -EOPNOTSUPP;
+      }
+ 
+      virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const {
+        return cache_bytes[pri];
+      }
+      virtual int64_t get_cache_bytes() const {
+        int64_t total = 0;
+        for (int i = 0; i < PriorityCache::Priority::LAST + 1; i++) {
+          PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
+          total += get_cache_bytes(pri);
+        }
+        return total;
+      }
+      virtual int64_t set_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+        cache_bytes[pri] = bytes;
+        return bytes;
+      }
+      virtual int64_t add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+        cache_bytes[pri] += bytes;
+        return bytes;
+      }
+      virtual int64_t commit_cache_size() {
+        return get_cache_bytes(); 
+      }
+      virtual double get_cache_ratio() const {
+        return cache_ratio;
+      }
+      virtual int set_cache_ratio(double ratio) {
+        cache_ratio = ratio;
+        return 0;
+      }
+      virtual int64_t get_cache_min() const {
+        return cache_min;
+      }
+      virtual int set_cache_min(int64_t min) {
+        cache_min = min;
+        return 0;
+      }
+      virtual string get_cache_name() const = 0;
+    };
+
+    struct MetaCache : public MempoolCache {
+      MetaCache(BlueStore *s) : MempoolCache(s) {};
+
+      virtual uint64_t _get_used_bytes() const {
+        return mempool::bluestore_cache_other::allocated_bytes() +
+            mempool::bluestore_cache_onode::allocated_bytes();
+      }
+
+      virtual string get_cache_name() const {
+        return "BlueStore Meta Cache";
+      }
+
+      uint64_t _get_num_onodes() const {
+        uint64_t onode_num =
+            mempool::bluestore_cache_onode::allocated_items();
+        return (2 > onode_num) ? 2 : onode_num;
+      }
+
+      double get_bytes_per_onode() const {
+        return (double)_get_used_bytes() / (double)_get_num_onodes();
+      }
+   } meta_cache;
+
+    struct DataCache : public MempoolCache {
+      DataCache(BlueStore *s) : MempoolCache(s) {};
+
+      virtual uint64_t _get_used_bytes() const {
+        uint64_t bytes = 0;
+        for (auto i : store->cache_shards) {
+          bytes += i->_get_buffer_bytes();
+        }
+        return bytes; 
+      }
+      virtual string get_cache_name() const {
+        return "BlueStore Data Cache";
+      }
+    } data_cache;
+
   public:
     explicit MempoolThread(BlueStore *s)
       : store(s),
-	lock("BlueStore::MempoolThread::lock") {}
+	lock("BlueStore::MempoolThread::lock"),
+        next_cache_balance(ceph_clock_now()),
+        meta_cache(MetaCache(s)),
+        data_cache(DataCache(s)) {}
+
     void *entry() override;
     void init() {
       assert(stop == false);
@@ -1951,6 +2065,14 @@ private:
       lock.Unlock();
       join();
     }
+
+  private:
+    void _adjust_cache_settings();
+    void _trim_shards(bool autotune, bool log_stats);
+    void _balance_cache(const std::list<PriorityCache::PriCache *>& caches);
+    void _balance_cache_pri(int64_t& mem_avail, 
+                            const std::list<PriorityCache::PriCache *>& caches, 
+                            PriorityCache::Priority pri);
   } mempool_thread;
 
   // --------------------------------------------------------

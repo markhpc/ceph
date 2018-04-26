@@ -13,6 +13,7 @@
 #include "include/encoding.h"
 #include "common/Formatter.h"
 #include "common/perf_counters.h"
+#include "common/PriorityCache.h"
 
 using std::string;
 using std::vector;
@@ -21,7 +22,7 @@ using std::vector;
  *
  * Kyoto Cabinet or LevelDB should implement this
  */
-class KeyValueDB {
+class KeyValueDB : public PriorityCache::PriCache {
 public:
   /*
    *  See RocksDB's definition of a column family(CF) and how to use it.
@@ -270,6 +271,10 @@ public:
   typedef ceph::shared_ptr< WholeSpaceIteratorImpl > WholeSpaceIterator;
 
 private:
+  int64_t cache_bytes[PriorityCache::Priority::LAST+1];
+  double cache_ratio;
+  int64_t cache_min;
+
   // This class filters a WholeSpaceIterator by a prefix.
   class PrefixIteratorImpl : public IteratorImpl {
     const std::string prefix;
@@ -356,6 +361,67 @@ public:
   }
 
   virtual int set_cache_size(uint64_t) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int64_t request_cache_bytes(PriorityCache::Priority pri) const {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const {
+    return cache_bytes[pri];
+  }
+
+  virtual int64_t get_cache_bytes() const {
+    int64_t total = 0;
+    for (int i = 0; i < PriorityCache::Priority::LAST + 1; i++) {
+      PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
+      total += get_cache_bytes(pri);
+    }
+    return total;
+  }
+
+  virtual int64_t set_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+    cache_bytes[pri] = bytes;
+    return bytes;
+  }
+
+  virtual int64_t add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+    cache_bytes[pri] += bytes;
+    return bytes;
+  }
+
+  virtual int64_t commit_cache_size() {
+    return -EOPNOTSUPP;
+  }
+
+  virtual double get_cache_ratio() const {
+    return cache_ratio;
+  }
+
+  virtual int set_cache_ratio(double ratio) {
+    cache_ratio = ratio;
+    return 0;
+  }
+
+  virtual int64_t get_cache_min() const {
+    return cache_min;
+  }
+
+  virtual int set_cache_min(int64_t min) {
+    cache_min = min;
+    return 0;
+  }
+
+  virtual string get_cache_name() const {
+    return "Unknown KeyValueDB Cache";
+  } 
+
+  virtual int set_cache_high_pri_pool_ratio(double ratio) {
+    return -EOPNOTSUPP;
+  }
+
+  virtual int64_t get_cache_usage() const {
     return -EOPNOTSUPP;
   }
 
