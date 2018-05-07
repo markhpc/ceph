@@ -781,77 +781,17 @@ BlueStore::Cache *BlueStore::Cache::create(CephContext* cct, string type,
   return c;
 }
 
+void BlueStore::Cache::trim(uint64_t onode_max, uint64_t buffer_max)
+{
+  std::lock_guard<std::recursive_mutex> l(lock);
+  _trim(onode_max, buffer_max);
+}
+
 void BlueStore::Cache::trim_all()
 {
   std::lock_guard<std::recursive_mutex> l(lock);
   _trim(0, 0);
 }
-
-void BlueStore::Cache::trim(
-  uint64_t target_bytes,
-  float target_meta_ratio,
-  float target_data_ratio,
-  float bytes_per_onode)
-{
-  std::lock_guard<std::recursive_mutex> l(lock);
-  uint64_t current_meta = _get_num_onodes() * bytes_per_onode;
-  uint64_t current_buffer = _get_buffer_bytes();
-  uint64_t current = current_meta + current_buffer;
-
-  uint64_t target_meta = target_bytes * target_meta_ratio;
-  uint64_t target_buffer = target_bytes * target_data_ratio;
-
-  // correct for overflow or float imprecision
-  target_meta = min(target_bytes, target_meta);
-  target_buffer = min(target_bytes - target_meta, target_buffer);
-
-  if (current <= target_bytes) {
-    dout(30) << __func__
-	     << " shard target " << byte_u_t(target_bytes)
-	     << " meta/data ratios " << target_meta_ratio
-	     << " + " << target_data_ratio << " ("
-	     << byte_u_t(target_meta) << " + "
-	     << byte_u_t(target_buffer) << "), "
-	     << " current " << byte_u_t(current) << " ("
-	     << byte_u_t(current_meta) << " + "
-	     << byte_u_t(current_buffer) << ")"
-	     << dendl;
-    return;
-  }
-
-  uint64_t need_to_free = current - target_bytes;
-  uint64_t free_buffer = 0;
-  uint64_t free_meta = 0;
-  if (current_buffer > target_buffer) {
-    free_buffer = current_buffer - target_buffer;
-    if (free_buffer > need_to_free) {
-      free_buffer = need_to_free;
-    }
-  }
-  free_meta = need_to_free - free_buffer;
-
-  // start bounds at what we have now
-  uint64_t max_buffer = current_buffer - free_buffer;
-  uint64_t max_meta = current_meta - free_meta;
-  uint64_t max_onodes = max_meta / bytes_per_onode;
-
-  dout(20) << __func__
-	   << " shard target " << byte_u_t(target_bytes)
-	   << " ratio " << target_meta_ratio << " ("
-	   << byte_u_t(target_meta) << " + "
-	   << byte_u_t(target_buffer) << "), "
-	   << " current " << byte_u_t(current) << " ("
-	   << byte_u_t(current_meta) << " + "
-	   << byte_u_t(current_buffer) << "),"
-	   << " need_to_free " << byte_u_t(need_to_free) << " ("
-	   << byte_u_t(free_meta) << " + "
-	   << byte_u_t(free_buffer) << ")"
-	   << " -> max " << max_onodes << " onodes + "
-	   << max_buffer << " buffer"
-	   << dendl;
-  _trim(max_onodes, max_buffer);
-}
-
 
 // LRUCache
 #undef dout_prefix
@@ -3482,17 +3422,16 @@ void *BlueStore::MempoolThread::entry()
     _adjust_cache_settings();
 
     // Before we trim, check and see if it's time to rebalance
-    bool autotune = store->cct->_conf->get_val<bool>("bluestore_cache_autotune");
     bool log_stats = false;
     if (next_cache_balance < ceph_clock_now()) {
-      if (autotune) {
+      if (store->cache_autotune) {
         _balance_cache(caches);
       }
       next_cache_balance += 5;
       log_stats = true;
     }
 
-    _trim_shards(autotune, log_stats);
+    _trim_shards(log_stats);
     store->_update_cache_logger();
 
     utime_t wait;
@@ -3506,45 +3445,46 @@ void *BlueStore::MempoolThread::entry()
 void BlueStore::MempoolThread::_adjust_cache_settings() {
   store->db->set_cache_min(store->cache_kv_min);
   store->db->set_cache_ratio(store->cache_kv_ratio);
+
   meta_cache.set_cache_min(store->cache_meta_min);
   meta_cache.set_cache_ratio(store->cache_meta_ratio);
+
   data_cache.set_cache_min(store->cache_data_min);
   data_cache.set_cache_ratio(store->cache_data_ratio);
 }
 
-void BlueStore::MempoolThread::_trim_shards(bool autotune, bool log_stats) {
+void BlueStore::MempoolThread::_trim_shards(bool log_stats) {
   uint64_t cache_size = store->cache_size;
   size_t num_shards = store->cache_shards.size();
-  double kv_alloc_ratio = 0;
-  double meta_alloc_ratio = 0;
-  double data_alloc_ratio = 0;
-  uint64_t shard_target = 0;
+  int64_t kv_alloc_bytes = 0;
+  int64_t meta_alloc_bytes = 0;
+  int64_t data_alloc_bytes = 0;
 
-  if (autotune) {
-    int64_t kv_alloc_bytes = store->db->get_cache_bytes();
-    kv_alloc_ratio = (double) kv_alloc_bytes / cache_size;
-    int64_t meta_alloc_bytes = meta_cache.get_cache_bytes();
-    meta_alloc_ratio = (double) meta_alloc_bytes / cache_size;
-    int64_t data_alloc_bytes = data_cache.get_cache_bytes();
-    data_alloc_ratio = (double) data_alloc_bytes / cache_size;
-    shard_target = (meta_alloc_bytes + data_alloc_bytes) / num_shards;
+  if (store->cache_autotune) {
+    kv_alloc_bytes = store->db->get_cache_bytes();
+    meta_alloc_bytes = meta_cache.get_cache_bytes();
+    data_alloc_bytes = data_cache.get_cache_bytes();
   } else {
-    kv_alloc_ratio = store->db->get_cache_ratio();
-    if (kv_alloc_ratio < store->db->get_cache_min() / cache_size) {
-      kv_alloc_ratio = store->db->get_cache_min() / cache_size;
+    kv_alloc_bytes = static_cast<int64_t>(
+        store->db->get_cache_ratio() * cache_size);
+    if (kv_alloc_bytes < store->db->get_cache_min()) {
+        kv_alloc_bytes = store->db->get_cache_min();
     }
-    meta_alloc_ratio = meta_cache.get_cache_ratio();
-    if (meta_alloc_ratio < meta_cache.get_cache_min() / cache_size) {
-      meta_alloc_ratio = meta_cache.get_cache_min() / cache_size;
+    meta_alloc_bytes = static_cast<int64_t>(
+        meta_cache.get_cache_ratio() * cache_size);
+    if (meta_alloc_bytes < meta_cache.get_cache_min()) {
+        meta_alloc_bytes = meta_cache.get_cache_min();
     }
-    data_alloc_ratio = data_cache.get_cache_ratio();
-    if (data_alloc_ratio < data_cache.get_cache_min() / cache_size) {
-      data_alloc_ratio = data_cache.get_cache_min() / cache_size;
+    data_alloc_bytes = static_cast<int64_t>(
+        data_cache.get_cache_ratio() * cache_size);
+    if (data_alloc_bytes < data_cache.get_cache_min()) {
+        data_alloc_bytes = data_cache.get_cache_min();
     }
-    double target_ratio = meta_alloc_ratio + data_alloc_ratio;
-    shard_target = target_ratio * (cache_size / num_shards);
   }
   if (log_stats) {
+    double kv_alloc_ratio = (double) kv_alloc_bytes / cache_size;
+    double meta_alloc_ratio = (double) meta_alloc_bytes / cache_size;
+    double data_alloc_ratio = (double) data_alloc_bytes / cache_size;
     double kv_used_ratio = (double) store->db->get_cache_usage() / cache_size;
     double meta_used_ratio = (double) meta_cache._get_used_bytes() / cache_size;
     double data_used_ratio = (double) data_cache._get_used_bytes() / cache_size;
@@ -3557,11 +3497,16 @@ void BlueStore::MempoolThread::_trim_shards(bool autotune, bool log_stats) {
                          << " data_alloc: " << 100*data_alloc_ratio << "%"
                          << " data_used: " << 100*data_used_ratio << "%" << dendl;
   }
+
+  uint64_t max_shard_onodes = static_cast<uint64_t>(
+      (meta_alloc_bytes / (double) num_shards) / meta_cache.get_bytes_per_onode());
+  uint64_t max_shard_buffer = static_cast<uint64_t>(
+      data_alloc_bytes / num_shards);
+  ldout(store->cct, 1) << __func__ << " max_shard_onodes: " << max_shard_onodes
+                       << " max_shard_buffer: " << max_shard_buffer << dendl;
+
   for (auto i : store->cache_shards) {
-    i->trim(shard_target, 
-            meta_alloc_ratio,
-            data_alloc_ratio, 
-            meta_cache.get_bytes_per_onode());
+    i->trim(max_shard_onodes, max_shard_buffer);
   }
 }
 
@@ -4055,6 +4000,8 @@ void BlueStore::_set_blob_size()
 int BlueStore::_set_cache_sizes()
 {
   assert(bdev);
+  cache_autotune = cct->_conf->get_val<bool>("bluestore_cache_autotune");
+
   if (cct->_conf->bluestore_cache_size) {
     cache_size = cct->_conf->bluestore_cache_size;
   } else {

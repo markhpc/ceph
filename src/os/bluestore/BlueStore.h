@@ -1100,10 +1100,7 @@ public:
       --num_blobs;
     }
 
-    void trim(uint64_t target_bytes,
-	      float target_meta_ratio,
-	      float target_data_ratio,
-	      float bytes_per_onode);
+    void trim(uint64_t onode_max, uint64_t buffer_max);
 
     void trim_all();
 
@@ -1930,6 +1927,7 @@ private:
   uint64_t cache_meta_min = 0;   ///< cache min dedicated to metadata
   uint64_t cache_kv_min = 0;     ///< cache min dedicated to kv (e.g., rocksdb)
   uint64_t cache_data_min = 0;   ///< cache min dedicated to object data
+  bool cache_autotune = false;   ///< cache autotune setting
 
   std::mutex vstatfs_lock;
   volatile_statfs vstatfs;
@@ -1971,8 +1969,9 @@ private:
       virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const {
         return cache_bytes[pri];
       }
-      virtual int64_t get_cache_bytes() const {
+      virtual int64_t get_cache_bytes() const { 
         int64_t total = 0;
+
         for (int i = 0; i < PriorityCache::Priority::LAST + 1; i++) {
           PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
           total += get_cache_bytes(pri);
@@ -2028,7 +2027,7 @@ private:
       double get_bytes_per_onode() const {
         return (double)_get_used_bytes() / (double)_get_num_onodes();
       }
-   } meta_cache;
+    } meta_cache;
 
     struct DataCache : public MempoolCache {
       DataCache(BlueStore *s) : MempoolCache(s) {};
@@ -2068,7 +2067,7 @@ private:
 
   private:
     void _adjust_cache_settings();
-    void _trim_shards(bool autotune, bool log_stats);
+    void _trim_shards(bool log_stats);
     void _balance_cache(const std::list<PriorityCache::PriCache *>& caches);
     void _balance_cache_pri(int64_t& mem_avail, 
                             const std::list<PriorityCache::PriCache *>& caches, 
