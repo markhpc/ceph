@@ -1236,9 +1236,10 @@ void RocksDBStore::compact_range(const string& start, const string& end)
   db->CompactRange(options, &cstart, &cend);
 }
 
-int64_t RocksDBStore::request_cache_bytes(PriorityCache::Priority pri) const
+int64_t RocksDBStore::request_cache_bytes(PriorityCache::Priority pri, uint64_t chunk_bytes) const
 {
   auto cache = bbt_opts.block_cache;
+  int64_t assigned = get_cache_bytes(pri);
 
   switch (pri) {
   // PRI0 is for rocksdb's high priority items (indexes/filters)
@@ -1252,15 +1253,17 @@ int64_t RocksDBStore::request_cache_bytes(PriorityCache::Priority pri) const
       if (high_pri_watermark > usage) {
         usage = high_pri_watermark;
       }
-      dout(1) << __func__ << " high pri pool usage: " << usage << dendl;
-      return PriorityCache::get_chunk(usage);
+      dout(10) << __func__ << " high pri pool usage: " << usage << dendl;
+      int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
+      return (request > assigned) ? request - assigned : 0;
     }
-  // All other cache items are currently shoved into PRI3
-  case PriorityCache::Priority::PRI3:
+  // All other cache items are currently shoved into the LAST priority. 
+  case PriorityCache::Priority::LAST:
     { 
       uint64_t usage = cache->GetUsage() - cache->GetHighPriPoolUsage();
-      dout(1) << __func__ << " low pri pool usage: " << usage << dendl;
-      return PriorityCache::get_chunk(usage);
+      dout(10) << __func__ << " low pri pool usage: " << usage << dendl;
+      int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
+      return (request > assigned) ? request - assigned : 0;
     }
   default:
     break;
@@ -1275,21 +1278,17 @@ int64_t RocksDBStore::get_cache_usage() const
 
 int64_t RocksDBStore::commit_cache_size()
 {
-  // Get an approximation of the bytes we want for the high pri pool.
-  // If extra memory was assigned to PRI0 to fulfill a minimum value,
-  // this lets us utilize it in either the high or low priority pool.
-  int64_t high_pri_bytes = request_cache_bytes(PriorityCache::Priority::PRI0);
- 
+  int64_t high_pri_bytes = get_cache_bytes(PriorityCache::Priority::PRI0);
   int64_t total_bytes = get_cache_bytes();
-  double ratio = (double) high_pri_bytes / total_bytes;
 
+  double ratio = (double) high_pri_bytes / total_bytes;
   size_t old_bytes = bbt_opts.block_cache->GetCapacity();
-  dout(1) << __func__ << " old: " << old_bytes
-          << ", new: " << total_bytes << dendl;
+  dout(10) << __func__ << " old: " << old_bytes
+           << ", new: " << total_bytes << dendl;
   bbt_opts.block_cache->SetCapacity((size_t) total_bytes);
   set_cache_high_pri_pool_ratio(ratio);
 
-  // After setting the cache sies, updated the high pri watermark. 
+  // After setting the cache sizes, updated the high pri watermark. 
   int64_t high_pri_pool_usage = bbt_opts.block_cache->GetHighPriPoolUsage();
   if (high_pri_watermark < high_pri_pool_usage) {
     high_pri_watermark = high_pri_pool_usage;
@@ -1305,7 +1304,7 @@ int RocksDBStore::set_cache_high_pri_pool_ratio(double ratio)
   if (g_conf->rocksdb_cache_type != "lru") {
     return -EOPNOTSUPP;
   }
-  dout(1) << __func__ << " osd ratio: " 
+  dout(10) << __func__ << " old ratio: " 
           << bbt_opts.block_cache->GetHighPriPoolRatio() << " new ratio: "
           << ratio << dendl;
   bbt_opts.block_cache->SetHighPriPoolRatio(ratio);

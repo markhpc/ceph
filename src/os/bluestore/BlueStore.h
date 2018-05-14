@@ -1928,6 +1928,8 @@ private:
   uint64_t cache_kv_min = 0;     ///< cache min dedicated to kv (e.g., rocksdb)
   uint64_t cache_data_min = 0;   ///< cache min dedicated to object data
   bool cache_autotune = false;   ///< cache autotune setting
+  uint64_t cache_autotune_chunk_size = 0; ///< cache autotune chunk size
+  double cache_autotune_interval = 0; ///< time to wait between cache rebalancing
 
   std::mutex vstatfs_lock;
   volatile_statfs vstatfs;
@@ -1939,26 +1941,24 @@ private:
     Cond cond;
     Mutex lock;
     bool stop = false;
-    utime_t last_cache_balance;
-    utime_t next_cache_balance;
 
     struct MempoolCache : public PriorityCache::PriCache {
       BlueStore *store;
       int64_t cache_bytes[PriorityCache::Priority::LAST+1];
-      int64_t cache_min;
-      double cache_ratio;
+      double cache_ratio = 0;
 
       MempoolCache(BlueStore *s) : store(s) {};
 
       virtual uint64_t _get_used_bytes() const = 0;
 
-      virtual int64_t request_cache_bytes(PriorityCache::Priority pri) const {
+      virtual int64_t request_cache_bytes(
+          PriorityCache::Priority pri, uint64_t chunk_bytes) const {
         switch (pri) {
-        // All cache items are currently shoved into PRI3
-        case PriorityCache::Priority::PRI3:
+        // All cache items are currently shoved into the LAST priority 
+        case PriorityCache::Priority::LAST:
           {
             int64_t usage = _get_used_bytes();
-            return PriorityCache::get_chunk(usage);
+            return PriorityCache::get_chunk(usage, chunk_bytes);
           }
         default:
           break;
@@ -1978,13 +1978,11 @@ private:
         }
         return total;
       }
-      virtual int64_t set_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+      virtual void set_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
         cache_bytes[pri] = bytes;
-        return bytes;
       }
-      virtual int64_t add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+      virtual void add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
         cache_bytes[pri] += bytes;
-        return bytes;
       }
       virtual int64_t commit_cache_size() {
         return get_cache_bytes(); 
@@ -1992,16 +1990,8 @@ private:
       virtual double get_cache_ratio() const {
         return cache_ratio;
       }
-      virtual int set_cache_ratio(double ratio) {
+      virtual void set_cache_ratio(double ratio) {
         cache_ratio = ratio;
-        return 0;
-      }
-      virtual int64_t get_cache_min() const {
-        return cache_min;
-      }
-      virtual int set_cache_min(int64_t min) {
-        cache_min = min;
-        return 0;
       }
       virtual string get_cache_name() const = 0;
     };
@@ -2048,7 +2038,6 @@ private:
     explicit MempoolThread(BlueStore *s)
       : store(s),
 	lock("BlueStore::MempoolThread::lock"),
-        next_cache_balance(ceph_clock_now()),
         meta_cache(MetaCache(s)),
         data_cache(DataCache(s)) {}
 
@@ -2069,7 +2058,7 @@ private:
     void _adjust_cache_settings();
     void _trim_shards(bool log_stats);
     void _balance_cache(const std::list<PriorityCache::PriCache *>& caches);
-    void _balance_cache_pri(int64_t& mem_avail, 
+    void _balance_cache_pri(int64_t *mem_avail, 
                             const std::list<PriorityCache::PriCache *>& caches, 
                             PriorityCache::Priority pri);
   } mempool_thread;

@@ -472,7 +472,8 @@ err:
     return total_size;
   }
 
-  virtual int64_t request_cache_bytes(PriorityCache::Priority pri) const override;
+  virtual int64_t request_cache_bytes(
+      PriorityCache::Priority pri, uint64_t cache_bytes) const override;
   virtual int64_t commit_cache_size() override;
   virtual std::string get_cache_name() const override {
     return "RocksDB Block Cache";

@@ -15,13 +15,12 @@
 #include "PriorityCache.h"
 
 namespace PriorityCache {
-  int64_t get_chunk(uint64_t usage) {
+  int64_t get_chunk(uint64_t usage, uint64_t chunk_bytes) {
     // Add a chunk of headroom and round up to the near chunk
-    uint64_t chunk = 2<<24;
-    uint64_t val = usage + chunk;
-    uint64_t r = (val) % chunk;
+    uint64_t val = usage + chunk_bytes;
+    uint64_t r = (val) % chunk_bytes;
     if (r > 0)
-      val = val + chunk - r;
+      val = val + chunk_bytes - r;
     return val;
   }
 
