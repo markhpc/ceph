@@ -1953,12 +1953,15 @@ private:
 
       virtual int64_t request_cache_bytes(
           PriorityCache::Priority pri, uint64_t chunk_bytes) const {
+        int64_t assigned = get_cache_bytes(pri);
+
         switch (pri) {
         // All cache items are currently shoved into the LAST priority 
         case PriorityCache::Priority::LAST:
           {
-            int64_t usage = _get_used_bytes();
-            return PriorityCache::get_chunk(usage, chunk_bytes);
+            uint64_t usage = _get_used_bytes();
+            int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
+            return(request > assigned) ? request - assigned : 0;
           }
         default:
           break;
