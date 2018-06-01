@@ -28,6 +28,7 @@
 #include <boost/intrusive/set.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/dynamic_bitset.hpp>
+#include <boost/circular_buffer.hpp>
 
 #include "include/assert.h"
 #include "include/unordered_map.h"
@@ -190,6 +191,7 @@ public:
     uint64_t seq;
     uint32_t offset, length;
     bufferlist data;
+    std::shared_ptr<int64_t> cache_age_bin;  ///< cache age bin
 
     boost::intrusive::list_member_hook<> lru_item;
     boost::intrusive::list_member_hook<> state_item;
@@ -1034,6 +1036,7 @@ public:
     std::atomic<int> flushing_count = {0};
     std::mutex flush_lock;  ///< protect flush_txns
     std::condition_variable flush_cond;   ///< wait here for uncommitted txns
+    std::shared_ptr<int64_t> cache_age_bin;  ///< cache age bin 
 
     Onode(Collection *c, const ghobject_t& o,
 	  const mempool::bluestore_cache_other::string& k)
@@ -1066,9 +1069,14 @@ public:
     std::atomic<uint64_t> num_extents = {0};
     std::atomic<uint64_t> num_blobs = {0};
 
+    boost::circular_buffer<std::shared_ptr<int64_t>> onode_age_bins;
+    boost::circular_buffer<std::shared_ptr<int64_t>> buffer_age_bins;
+
     static Cache *create(CephContext* cct, string type, PerfCounters *logger);
 
-    Cache(CephContext* cct) : cct(cct), logger(nullptr) {}
+    Cache(CephContext* cct) : cct(cct), logger(nullptr), onode_age_bins(720), buffer_age_bins(720) {
+  rotate_bins();
+}
     virtual ~Cache() {}
 
     virtual void _add_onode(OnodeRef& o, int level) = 0;
@@ -1082,7 +1090,15 @@ public:
     virtual void _touch_buffer(Buffer *b) = 0;
 
     virtual uint64_t _get_num_onodes() = 0;
+    uint64_t get_num_onodes(PriorityCache::Priority pri);
     virtual uint64_t _get_buffer_bytes() = 0;
+    uint64_t get_buffer_bytes(PriorityCache::Priority pri);
+
+    void rotate_bins() {
+      std::lock_guard<std::recursive_mutex> l(lock);
+      onode_age_bins.push_front(std::make_shared<int64_t>(0));
+      buffer_age_bins.push_front(std::make_shared<int64_t>(0));
+    }
 
     void add_extent() {
       ++num_extents;
@@ -1144,16 +1160,21 @@ public:
 
   public:
     LRUCache(CephContext* cct) : Cache(cct) {}
+
     uint64_t _get_num_onodes() override {
       return onode_lru.size();
     }
+
     void _add_onode(OnodeRef& o, int level) override {
       if (level > 0)
 	onode_lru.push_front(*o);
       else
 	onode_lru.push_back(*o);
+      o->cache_age_bin = onode_age_bins.front();
+      *(o->cache_age_bin) += 1;
     }
     void _rm_onode(OnodeRef& o) override {
+      *(o->cache_age_bin) -= 1;
       auto q = onode_lru.iterator_to(*o);
       onode_lru.erase(q);
     }
@@ -1172,10 +1193,14 @@ public:
 	buffer_lru.push_back(*b);
       }
       buffer_size += b->length;
+      b->cache_age_bin = buffer_age_bins.front();
+      *(b->cache_age_bin) += b->length;
     }
     void _rm_buffer(Buffer *b) override {
       assert(buffer_size >= b->length);
       buffer_size -= b->length;
+      assert(*(b->cache_age_bin) >= b->length);
+      *(b->cache_age_bin) -= b->length;
       auto q = buffer_lru.iterator_to(*b);
       buffer_lru.erase(q);
     }
@@ -1186,11 +1211,17 @@ public:
     void _adjust_buffer_size(Buffer *b, int64_t delta) override {
       assert((int64_t)buffer_size + delta >= 0);
       buffer_size += delta;
+      assert(*(b->cache_age_bin) + delta >= 0);
+      *(b->cache_age_bin) += delta;
     }
     void _touch_buffer(Buffer *b) override {
       auto p = buffer_lru.iterator_to(*b);
       buffer_lru.erase(p);
       buffer_lru.push_front(*b);
+      *(b->cache_age_bin) -= b->length;
+      b->cache_age_bin = buffer_age_bins.front();
+      *(b->cache_age_bin) += b->length;
+
       _audit("_touch_buffer end");
     }
 
@@ -1249,6 +1280,7 @@ public:
 
   public:
     TwoQCache(CephContext* cct) : Cache(cct) {}
+
     uint64_t _get_num_onodes() override {
       return onode_lru.size();
     }
@@ -1257,13 +1289,15 @@ public:
 	onode_lru.push_front(*o);
       else
 	onode_lru.push_back(*o);
+      o->cache_age_bin = onode_age_bins.front();
+      *(o->cache_age_bin) += 1;
     }
     void _rm_onode(OnodeRef& o) override {
+      *(o->cache_age_bin) -= 1;
       auto q = onode_lru.iterator_to(*o);
       onode_lru.erase(q);
     }
     void _touch_onode(OnodeRef& o) override;
-
     uint64_t _get_buffer_bytes() override {
       return buffer_bytes;
     }
@@ -1286,6 +1320,10 @@ public:
 	buffer_hot.push_front(*b);
 	break;
       }
+      *(b->cache_age_bin) -= b->length;
+      b->cache_age_bin = buffer_age_bins.front();
+      *(b->cache_age_bin) += b->length;
+
       _audit("_touch_buffer end");
     }
 
@@ -1953,24 +1991,6 @@ private:
 
       virtual uint64_t _get_used_bytes() const = 0;
 
-      virtual int64_t request_cache_bytes(
-          PriorityCache::Priority pri, uint64_t chunk_bytes) const {
-        int64_t assigned = get_cache_bytes(pri);
-
-        switch (pri) {
-        // All cache items are currently shoved into the LAST priority 
-        case PriorityCache::Priority::LAST:
-          {
-            uint64_t usage = _get_used_bytes();
-            int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
-            return(request > assigned) ? request - assigned : 0;
-          }
-        default:
-          break;
-        }
-        return -EOPNOTSUPP;
-      }
- 
       virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const {
         return cache_bytes[pri];
       }
@@ -2004,6 +2024,18 @@ private:
     struct MetaCache : public MempoolCache {
       MetaCache(BlueStore *s) : MempoolCache(s) {};
 
+      virtual int64_t request_cache_bytes(
+          PriorityCache::Priority pri, uint64_t chunk_bytes) const {
+        int64_t assigned = get_cache_bytes(pri);
+        uint64_t onodes = 0;
+        for (auto i : store->cache_shards) {
+          onodes += i->get_num_onodes(pri);
+        } 
+        uint64_t usage = onodes*get_bytes_per_onode(); 
+        int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
+        return(request > assigned) ? request - assigned : 0;
+      }
+
       virtual uint64_t _get_used_bytes() const {
         return mempool::bluestore_cache_other::allocated_bytes() +
             mempool::bluestore_cache_onode::allocated_bytes();
@@ -2027,6 +2059,17 @@ private:
     struct DataCache : public MempoolCache {
       DataCache(BlueStore *s) : MempoolCache(s) {};
 
+      virtual int64_t request_cache_bytes(
+          PriorityCache::Priority pri, uint64_t chunk_bytes) const {
+        int64_t assigned = get_cache_bytes(pri);
+        uint64_t usage = 0;
+        for (auto i : store->cache_shards) {
+          usage += i->get_buffer_bytes(pri);
+        }
+        int64_t request = PriorityCache::get_chunk(usage, chunk_bytes);
+        return(request > assigned) ? request - assigned : 0;
+      }
+
       virtual uint64_t _get_used_bytes() const {
         uint64_t bytes = 0;
         for (auto i : store->cache_shards) {
@@ -2034,6 +2077,7 @@ private:
         }
         return bytes; 
       }
+
       virtual string get_cache_name() const {
         return "BlueStore Data Cache";
       }

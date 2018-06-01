@@ -22,9 +22,12 @@ namespace PriorityCache {
   enum Priority {
     PRI0,  // Reserved for special items
     PRI1,  // High priority cache items
-    PRI2,  // Medium priority cache items
-    PRI3,  // Low priority cache items
-    LAST = PRI3,
+    PRI2,  // Medium-high priority cache items
+    PRI3,  // Medium priority cache items
+    PRI4,  // Medium-low priority cache items
+    PRI5,  // Low priority cache items
+    PRI6,  // Any remaining cached items
+    LAST = PRI6,
   };
 
   int64_t get_chunk(uint64_t usage, uint64_t chunk_bytes);

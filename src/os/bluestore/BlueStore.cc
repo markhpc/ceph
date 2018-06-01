@@ -782,6 +782,162 @@ BlueStore::Cache *BlueStore::Cache::create(CephContext* cct, string type,
   return c;
 }
 
+uint64_t BlueStore::Cache::get_num_onodes(PriorityCache::Priority pri) {
+  switch(pri) {
+  case PriorityCache::Priority::PRI0:
+    {
+      return 0; // Reserved for special items
+    }
+  case PriorityCache::Priority::PRI1:
+    {
+      // Cache the last 5 seconds of onodes at high priority
+      uint64_t count = 0;
+      int end = (onode_age_bins.size() < 1) ? onode_age_bins.size() : 1;
+      for (int i = 0; i < end; i++) {
+        count += *(onode_age_bins[i]);
+      }
+      return count;
+    } 
+  case PriorityCache::Priority::PRI2:
+    {
+      // Cache the last 30 seconds of onodes at med-high priority
+      uint64_t count = 0;
+      auto size = onode_age_bins.size();
+      if (size < 1) {
+        return 0;
+      }
+      int end = (size < 6) ? size : 6;
+      for (int i = 1; i < end; i++) {
+        count += *(onode_age_bins[i]);
+      }
+      return count;
+    }
+  case PriorityCache::Priority::PRI3:
+    {
+      // Cache the last 5 minutes of onodes at medium priority
+      uint64_t count = 0;
+      auto size = onode_age_bins.size();
+      if (size < 7) {
+        return 0;
+      }
+      int end = (size < 60) ? size : 60;
+      for (int i = 7; i < end; i++) {
+        count += *(onode_age_bins[i]);
+      }
+      return count;
+    }
+  case PriorityCache::Priority::PRI4:
+    {
+      // Cache the last hour of onodes at medium-low priority
+      uint64_t count = 0;
+      auto size = onode_age_bins.size();
+      if (size < 61) {
+        return 0;
+      }
+      int end = (size < 720) ? size : 720;
+      for (int i = 61; i < end; i++) {
+        count += *(onode_age_bins[i]);
+      }
+      return count;
+    }
+
+
+  case PriorityCache::Priority::LAST:
+    {
+      // Cache any remaining onodes at the last priority
+      uint64_t count = _get_num_onodes();
+      for (int i = 0; i < PriorityCache::Priority::LAST; i++) {
+        PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
+        count -= get_num_onodes(pri);
+      }
+      return count;
+    }
+  default:
+    break;
+  }
+  return 0;
+}
+
+uint64_t BlueStore::Cache::get_buffer_bytes(PriorityCache::Priority pri) {
+  switch(pri) {
+  case PriorityCache::Priority::PRI0:
+    {
+      return 0; // Reserved for special items
+    }
+  case PriorityCache::Priority::PRI1:
+    {
+      return 0; // Don't cache buffers with high priority
+    }
+  case PriorityCache::Priority::PRI2:
+    {
+      // Cache the last 5 seconds of buffers at medium-high priority
+      uint64_t bytes = 0;
+      int end = (buffer_age_bins.size() < 1) ? buffer_age_bins.size() : 1;
+      for (int i = 0; i < end; i++) {
+        bytes += *(buffer_age_bins[i]);
+      }
+      return bytes;
+    }
+  case PriorityCache::Priority::PRI3:
+    {
+      // Cache the last 30 seconds of buffers at medium priority
+      uint64_t bytes = 0;
+      auto size = buffer_age_bins.size();
+      if (size < 1) {
+        return 0;
+      }
+      int end = (buffer_age_bins.size() < 6) ? buffer_age_bins.size() : 6;
+      for (int i = 1; i < end; i++) {
+        bytes += *(buffer_age_bins[i]);
+      }
+      return bytes;
+    }
+  case PriorityCache::Priority::PRI4:
+    {
+      // Cache the last 5 minutes of buffers at medium-low priority
+      uint64_t bytes = 0;
+      auto size = buffer_age_bins.size();
+      if (size < 7) {
+        return 0;
+      }
+      int end = (buffer_age_bins.size() < 60) ? buffer_age_bins.size() : 60;
+      for (int i = 7; i < end; i++) {
+        bytes += *(buffer_age_bins[i]);
+      }
+      return bytes;
+    }
+  case PriorityCache::Priority::PRI5:
+    {
+      // Cache the last hour of buffers at low priority
+      uint64_t bytes = 0;
+      auto size = buffer_age_bins.size();
+      if (size < 61) {
+        return 0;
+      }
+      int end = (buffer_age_bins.size() < 720) ? buffer_age_bins.size() : 720;
+      for (int i = 61; i < end; i++) {
+        bytes += *(buffer_age_bins[i]);
+      }
+      return bytes;
+    }
+  case PriorityCache::Priority::LAST:
+    {
+      // Cache any remaining buffers at the last priority
+      int64_t bytes = _get_buffer_bytes();
+      for (int i = 0; i < PriorityCache::Priority::LAST; i++) {
+        PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
+        bytes -= get_buffer_bytes(pri);
+      }
+      dout(5) << __func__ << " total bytes: " << _get_buffer_bytes() << " Priority::LAST bytes: " << bytes << dendl;
+      return bytes;
+    }
+  default:
+    break;
+  }
+  return 0;
+}
+
+
 void BlueStore::Cache::trim(uint64_t onode_max, uint64_t buffer_max)
 {
   std::lock_guard<std::recursive_mutex> l(lock);
@@ -803,6 +959,9 @@ void BlueStore::LRUCache::_touch_onode(OnodeRef& o)
   auto p = onode_lru.iterator_to(*o);
   onode_lru.erase(p);
   onode_lru.push_front(*o);
+  *(o->cache_age_bin) -= 1;
+  o->cache_age_bin = onode_age_bins.front();
+  *(o->cache_age_bin) += 1;
 }
 
 void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
@@ -865,6 +1024,8 @@ void BlueStore::LRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
       onode_lru.erase(p);
       assert(num == 1);
     }
+
+    *(o->cache_age_bin) -= 1;
     o->get();  // paranoia
     o->c->onode_map.remove(o->oid);
     o->put();
@@ -903,6 +1064,9 @@ void BlueStore::TwoQCache::_touch_onode(OnodeRef& o)
   auto p = onode_lru.iterator_to(*o);
   onode_lru.erase(p);
   onode_lru.push_front(*o);
+  *(o->cache_age_bin) -= 1;
+  o->cache_age_bin = onode_age_bins.front();
+  *(o->cache_age_bin) += 1;
 }
 
 void BlueStore::TwoQCache::_add_buffer(Buffer *b, int level, Buffer *near)
@@ -954,20 +1118,25 @@ void BlueStore::TwoQCache::_add_buffer(Buffer *b, int level, Buffer *near)
       assert(0 == "bad cache_private");
     }
   }
+
+  b->cache_age_bin = buffer_age_bins.front();
   if (!b->is_empty()) {
     buffer_bytes += b->length;
     buffer_list_bytes[b->cache_private] += b->length;
+    *(b->cache_age_bin) += b->length;
   }
 }
 
 void BlueStore::TwoQCache::_rm_buffer(Buffer *b)
 {
   dout(20) << __func__ << " " << *b << dendl;
- if (!b->is_empty()) {
+  if (!b->is_empty()) {
     assert(buffer_bytes >= b->length);
     buffer_bytes -= b->length;
     assert(buffer_list_bytes[b->cache_private] >= b->length);
     buffer_list_bytes[b->cache_private] -= b->length;
+    assert(*(b->cache_age_bin) >= b->length);
+    *(b->cache_age_bin) -= b->length; 
   }
   switch (b->cache_private) {
   case BUFFER_WARM_IN:
@@ -1009,6 +1178,7 @@ void BlueStore::TwoQCache::_move_buffer(Cache *srcc, Buffer *b)
   if (!b->is_empty()) {
     buffer_bytes += b->length;
     buffer_list_bytes[b->cache_private] += b->length;
+    *(b->cache_age_bin) += b->length;
   }
 }
 
@@ -1020,6 +1190,8 @@ void BlueStore::TwoQCache::_adjust_buffer_size(Buffer *b, int64_t delta)
     buffer_bytes += delta;
     assert((int64_t)buffer_list_bytes[b->cache_private] + delta >= 0);
     buffer_list_bytes[b->cache_private] += delta;
+    assert(*(b->cache_age_bin) + delta >= 0);
+    *(b->cache_age_bin) += delta;
   }
 }
 
@@ -1073,6 +1245,8 @@ void BlueStore::TwoQCache::_trim(uint64_t onode_max, uint64_t buffer_max)
       buffer_bytes -= b->length;
       assert(buffer_list_bytes[BUFFER_WARM_IN] >= b->length);
       buffer_list_bytes[BUFFER_WARM_IN] -= b->length;
+      assert(*(b->cache_age_bin) >= b->length);
+      *(b->cache_age_bin) -= b->length;
       to_evict_bytes -= b->length;
       evicted += b->length;
       b->state = Buffer::STATE_EMPTY;
@@ -1163,6 +1337,8 @@ void BlueStore::TwoQCache::_trim(uint64_t onode_max, uint64_t buffer_max)
       onode_lru.erase(p);
       assert(num == 1);
     }
+
+    *(o->cache_age_bin) -= 1;
     o->get();  // paranoia
     o->c->onode_map.remove(o->oid);
     o->put();
@@ -3427,6 +3603,44 @@ void *BlueStore::MempoolThread::entry()
       }
       next_balance = ceph_clock_now();
       next_balance += autotune_interval;
+
+      uint64_t pri1_onodes = 0;
+      uint64_t pri1_buffer_bytes = 0;
+      uint64_t pri2_onodes = 0;
+      uint64_t pri2_buffer_bytes = 0;
+      uint64_t pri3_onodes = 0;
+      uint64_t pri3_buffer_bytes = 0;
+      uint64_t pri4_onodes = 0;
+      uint64_t pri4_buffer_bytes = 0;
+      uint64_t pri5_onodes = 0;
+      uint64_t pri5_buffer_bytes = 0;
+      uint64_t onodes = 0;
+      uint64_t buffer_bytes = 0;
+
+
+      for (auto i : store->cache_shards) {
+        pri1_onodes += i->get_num_onodes(PriorityCache::Priority::PRI1);
+        pri1_buffer_bytes += i->get_buffer_bytes(PriorityCache::Priority::PRI1);
+        pri2_onodes += i->get_num_onodes(PriorityCache::Priority::PRI2);
+        pri2_buffer_bytes += i->get_buffer_bytes(PriorityCache::Priority::PRI2);
+        pri3_onodes += i->get_num_onodes(PriorityCache::Priority::PRI3);
+        pri3_buffer_bytes += i->get_buffer_bytes(PriorityCache::Priority::PRI3);
+        pri4_onodes += i->get_num_onodes(PriorityCache::Priority::PRI4);
+        pri4_buffer_bytes += i->get_buffer_bytes(PriorityCache::Priority::PRI4);
+        pri5_onodes += i->get_num_onodes(PriorityCache::Priority::PRI5);
+        pri5_buffer_bytes += i->get_buffer_bytes(PriorityCache::Priority::PRI5);
+        onodes += i->_get_num_onodes();
+        buffer_bytes += i->_get_buffer_bytes();
+        i->rotate_bins();
+      }
+      ldout(store->cct, 5) << __func__ << " cache onodes - PRI1: " << pri1_onodes
+                           << " PRI2: " << pri2_onodes << " PRI3: " << pri3_onodes
+                           << " PRI4: " << pri4_onodes << " PRI5: " << pri5_onodes
+                           << " Total: " << onodes << dendl;
+      ldout(store->cct, 5) << __func__ << " cache buffer - bytes PRI1: " << pri1_buffer_bytes 
+                           << " PRI2: " << pri2_buffer_bytes << " PRI3: " << pri3_buffer_bytes
+                           << " PRI4: " << pri4_buffer_bytes << " PRI5: " << pri5_buffer_bytes
+                           << " Total: " << buffer_bytes << dendl;
       log_stats = true;
     }
 
