@@ -307,6 +307,8 @@ if(ALLOCATOR STREQUAL "tcmalloc")
   set(ALLOC_LIBS ${GPERFTOOLS_TCMALLOC_LIBRARY})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
   set(TCMALLOC_srcs perfglue/heap_profiler.cc)
+  set(TCMALLOC_HEAP_PROFILER ON CACHE BOOL "Use the tcmalloc heap profiler")
+
 elseif(ALLOCATOR STREQUAL "tcmalloc_minimal")
   set(ALLOC_LIBS ${GPERFTOOLS_TCMALLOC_MINIMAL_LIBRARY})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")

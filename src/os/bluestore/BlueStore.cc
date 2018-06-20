@@ -35,6 +35,7 @@
 #include "BlueRocksEnv.h"
 #include "auth/Crypto.h"
 #include "common/EventTrace.h"
+#include "perfglue/heap_profiler.h"
 
 #define dout_context cct
 #define dout_subsys ceph_subsys_bluestore
@@ -3413,24 +3414,44 @@ void *BlueStore::MempoolThread::entry()
   caches.push_back(store->db);
   caches.push_back(&meta_cache);
   caches.push_back(&data_cache);
+  autotune_cache_size = store->cache_size;
 
   utime_t next_balance = ceph_clock_now();
+  utime_t next_resize = ceph_clock_now();
+
+  bool log_balance = false;
+  bool log_resize = false;
+  bool log_trim = false;
+
   while (!stop) {
     _adjust_cache_settings();
 
     // Before we trim, check and see if it's time to rebalance
-    bool log_stats = false;
     double autotune_interval = store->cache_autotune_interval;
     if (autotune_interval > 0 && next_balance < ceph_clock_now()) {
+      log_balance = true;
+      log_resize = true;
+      log_trim = true;
+
       if (store->cache_autotune) {
         _balance_cache(caches);
       }
+      log_balance = false;
+
       next_balance = ceph_clock_now();
       next_balance += autotune_interval;
-      log_stats = true;
     }
-
-    _trim_shards(log_stats);
+    double resize_interval = 1;
+    if (resize_interval > 0 && next_resize < ceph_clock_now()) {
+      if (store->cache_autotune) {
+        _tune_cache_size(log_resize);
+        log_resize = false;
+      }
+      next_resize = ceph_clock_now();
+      next_resize += resize_interval;
+    } 
+    _trim_shards(log_trim);
+    log_trim = false;
     store->_update_cache_logger();
 
     utime_t wait;
@@ -3457,6 +3478,8 @@ void BlueStore::MempoolThread::_trim_shards(bool log_stats)
   int64_t data_alloc_bytes = 0;
 
   if (store->cache_autotune) {
+    cache_size = autotune_cache_size;
+
     kv_alloc_bytes = store->db->get_cache_bytes();
     meta_alloc_bytes = meta_cache.get_cache_bytes();
     data_alloc_bytes = data_cache.get_cache_bytes();
@@ -3468,13 +3491,18 @@ void BlueStore::MempoolThread::_trim_shards(bool log_stats)
     data_alloc_bytes = static_cast<int64_t>(
         data_cache.get_cache_ratio() * cache_size);
   }
-  if (log_stats) {
+  if (log_stats && cache_size > 0) {
     double kv_alloc_ratio = (double) kv_alloc_bytes / cache_size;
     double meta_alloc_ratio = (double) meta_alloc_bytes / cache_size;
     double data_alloc_ratio = (double) data_alloc_bytes / cache_size;
     double kv_used_ratio = (double) store->db->get_cache_usage() / cache_size;
     double meta_used_ratio = (double) meta_cache._get_used_bytes() / cache_size;
     double data_used_ratio = (double) data_cache._get_used_bytes() / cache_size;
+
+    ldout(store->cct, 5) << __func__ << " bytes -"
+                         << " kv_alloc: " << kv_alloc_bytes
+                         << " meta_alloc: " << meta_alloc_bytes
+                         << " data_alloc: " << data_alloc_bytes << dendl;
 
     ldout(store->cct, 5) << __func__ << " ratios -" << std::fixed << std::setprecision(1)
                          << " kv_alloc: " << 100*kv_alloc_ratio << "%"
@@ -3497,10 +3525,56 @@ void BlueStore::MempoolThread::_trim_shards(bool log_stats)
   }
 }
 
+void BlueStore::MempoolThread::_tune_cache_size(bool log_stats)
+{
+  uint64_t target = store->osd_mem_target;
+  uint64_t base = store->osd_mem_base;
+  double fragmentation = store->osd_mem_expected_fragmentation;
+  uint64_t cache_max = ((1.0 - fragmentation) * target) - base;
+  uint64_t cache_min = store->osd_mem_cache_min;
+
+  size_t heap_size = 0;
+  size_t unmapped = 0;
+  uint64_t mapped = 0;
+
+  if (!ceph_using_tcmalloc()) {
+    return;
+  }
+
+  ceph_heap_release_free_memory();
+  ceph_heap_get_numeric_property("generic.heap_size", &heap_size);
+  ceph_heap_get_numeric_property("tcmalloc.pageheap_unmapped_bytes", &unmapped);
+  mapped = heap_size - unmapped;
+
+  uint64_t new_size = autotune_cache_size;
+  new_size = (new_size < cache_max) ? new_size : cache_max;
+  new_size = (new_size > cache_min) ? new_size : cache_min;
+
+  // Approach the min/max slowly, but bounce away quickly.
+  if ((uint64_t) mapped < target) {
+    double ratio = 1 - ((double) mapped / target);
+    new_size += ratio * (cache_max - new_size); 
+  } else {
+    double ratio = 1 - ((double) target / mapped);
+    new_size -= ratio * (new_size - cache_min);
+  }
+
+  if (log_stats) {
+    ldout(store->cct, 1) << __func__
+                         << " osd_memory_target: " << target
+                         << " heap_size: " << heap_size
+                         << " unmapped: " << unmapped
+                         << " mapped: " << mapped 
+                         << " old cache_size: " << autotune_cache_size
+                         << " new cache size: " << new_size << dendl;
+  }
+  autotune_cache_size = new_size;
+}
+
 void BlueStore::MempoolThread::_balance_cache(
     const std::list<PriorityCache::PriCache *>& caches)
 {
-  int64_t mem_avail = store->cache_size;
+  int64_t mem_avail = autotune_cache_size;
 
   // Assign memory for each priority level
   for (int i = 0; i < PriorityCache::Priority::LAST + 1; i++) {
@@ -3979,6 +4053,12 @@ int BlueStore::_set_cache_sizes()
       cct->_conf->get_val<uint64_t>("bluestore_cache_autotune_chunk_size");
   cache_autotune_interval =
       cct->_conf->get_val<double>("bluestore_cache_autotune_interval");
+  osd_mem_target = cct->_conf->get_val<uint64_t>("osd_mem_target");
+  osd_mem_base = cct->_conf->get_val<uint64_t>("osd_mem_base");
+  osd_mem_expected_fragmentation =
+      cct->_conf->get_val<double>("osd_mem_expected_fragmentation");
+  osd_mem_cache_min = cct->_conf->get_val<uint64_t>("osd_mem_cache_min");
+
 
   if (cct->_conf->bluestore_cache_size) {
     cache_size = cct->_conf->bluestore_cache_size;

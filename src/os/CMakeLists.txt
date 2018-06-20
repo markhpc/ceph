@@ -71,7 +71,9 @@ if(WITH_SPDK)
     bluestore/NVMEDevice.cc)
 endif()
 
-add_library(os STATIC ${libos_srcs} $<TARGET_OBJECTS:kv_objs>)
+add_library(os STATIC ${libos_srcs}
+  $<TARGET_OBJECTS:kv_objs>
+  $<TARGET_OBJECTS:heap_profiler_objs>)
 
 if(WITH_BLUEFS)
   add_library(bluefs SHARED 
@@ -147,3 +149,8 @@ endif(WITH_PMEM)
 if(WITH_LTTNG AND WITH_EVENTTRACE)
   add_dependencies(os eventtrace_tp)
 endif()
+
+#if(${TCMALLOC_HEAP_PROFILER})
+#  add_definitions(-DWITH_TCMALLOC_HEAP_PROFILER)
+#endif()
+
