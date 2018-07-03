@@ -9861,6 +9861,7 @@ void PrimaryLogPG::repop_all_committed(RepGather *repop)
 void PrimaryLogPG::op_applied(const eversion_t &applied_version)
 {
   dout(10) << "op_applied version " << applied_version << dendl;
+/*
   if (applied_version == eversion_t())
     return;
   assert(applied_version > last_update_applied);
@@ -9896,6 +9897,7 @@ void PrimaryLogPG::op_applied(const eversion_t &applied_version)
       }
     }
   }
+*/
 }
 
 void PrimaryLogPG::eval_repop(RepGather *repop)
@@ -9955,7 +9957,7 @@ void PrimaryLogPG::eval_repop(RepGather *repop)
   if (repop->all_applied && repop->all_committed) {
     repop->rep_done = true;
 
-    publish_stats_to_osd();
+//    publish_stats_to_osd();
     calc_min_last_complete_ondisk();
 
     dout(10) << " removing " << *repop << dendl;
