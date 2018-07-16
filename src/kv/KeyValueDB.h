@@ -402,6 +402,8 @@ public:
     cache_ratio = ratio;
   }
 
+  virtual void rotate_bins() {}
+
   virtual string get_cache_name() const {
     return "Unknown KeyValueDB Cache";
   } 

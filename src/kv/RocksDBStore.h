@@ -483,7 +483,7 @@ err:
     return "RocksDB Block Cache";
   }
   virtual int64_t get_cache_usage() const override;
-
+  virtual void rotate_bins() override;
 
   int set_cache_size(uint64_t s) override {
     cache_size = s;

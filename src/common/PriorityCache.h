@@ -21,13 +21,17 @@
 namespace PriorityCache {
   enum Priority {
     PRI0,  // Reserved for special items
-    PRI1,  // High priority cache items
-    PRI2,  // Medium priority cache items
-    PRI3,  // Low priority cache items
-    LAST = PRI3,
+    PRI1,  // Very-high priority cache items
+    PRI2,  // High priority cache items
+    PRI3,  // Medium-High priority cache items
+    PRI4,  // Medium priority cache items
+    PRI5,  // Medium-Low priority cache items
+    PRI6,  // Low priority cached items
+    PRI7,  // Very-low priority cache items
+    LAST = PRI7,
   };
 
-  int64_t get_chunk(uint64_t usage, uint64_t chunk_bytes);
+  int64_t get_chunk(uint64_t usage, uint64_t total_bytes);
 
   struct PriCache {
     virtual ~PriCache();
@@ -38,7 +42,7 @@ namespace PriorityCache {
      * future growth.  Note that the cache may ultimately be allocated less 
      * memory than it requests here.
      */
-    virtual int64_t request_cache_bytes(PriorityCache::Priority pri, uint64_t chunk_bytes) const = 0;
+    virtual int64_t request_cache_bytes(PriorityCache::Priority pri, uint64_t total_bytes) const = 0;
 
     // Get the number of bytes currently allocated to the given priority.
     virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const = 0;
@@ -61,8 +65,12 @@ namespace PriorityCache {
     // Set the ratio of available memory this cache should target.
     virtual void set_cache_ratio(double ratio) = 0;
 
+    // Rotate the bins
+    virtual void rotate_bins() = 0;
+
     // Get the name of this cache.
     virtual std::string get_cache_name() const = 0;
+
   };
 }
 

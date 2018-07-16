@@ -389,19 +389,16 @@ int RocksDBStore::load_rocksdb_options(bool create_if_missing, rocksdb::Options&
   }
   uint64_t row_cache_size = cache_size * g_conf()->rocksdb_cache_row_ratio;
   uint64_t block_cache_size = cache_size - row_cache_size;
-
+  uint64_t cache_shard_bits = g_conf()->rocksdb_cache_shard_bits;
   if (g_conf()->rocksdb_cache_type == "binned_lru") {
     bbt_opts.block_cache = rocksdb_cache::NewBinnedLRUCache(
-      block_cache_size,
-      g_conf()->rocksdb_cache_shard_bits);
+        block_cache_size, cache_shard_bits, false, 0.5, 720);
   } else if (g_conf()->rocksdb_cache_type == "lru") {
     bbt_opts.block_cache = rocksdb::NewLRUCache(
-      block_cache_size,
-      g_conf()->rocksdb_cache_shard_bits);
+        block_cache_size, cache_shard_bits);
   } else if (g_conf()->rocksdb_cache_type == "clock") {
     bbt_opts.block_cache = rocksdb::NewClockCache(
-      block_cache_size,
-      g_conf()->rocksdb_cache_shard_bits);
+        block_cache_size, cache_shard_bits);
     if (!bbt_opts.block_cache) {
       derr << "rocksdb_cache_type '" << g_conf()->rocksdb_cache_type
            << "' chosen, but RocksDB not compiled with LibTBB. "
@@ -1247,40 +1244,81 @@ void RocksDBStore::compact_range(const string& start, const string& end)
   db->CompactRange(options, &cstart, &cend);
 }
 
-int64_t RocksDBStore::request_cache_bytes(PriorityCache::Priority pri, uint64_t chunk_bytes) const
+int64_t RocksDBStore::request_cache_bytes(PriorityCache::Priority pri, uint64_t total_bytes) const
 {
   auto cache = bbt_opts.block_cache;
 
   int64_t assigned = get_cache_bytes(pri);
   int64_t usage = 0;
   int64_t request = 0;
-  switch (pri) {
-  // PRI0 is for rocksdb's high priority items (indexes/filters)
-  case PriorityCache::Priority::PRI0:
-    {
-      usage += cache->GetPinnedUsage();
-      if (g_conf()->rocksdb_cache_type == "binned_lru") {
-        auto binned_cache =
+
+  if (g_conf()->rocksdb_cache_type == "binned_lru") {
+    auto binned_cache =
             std::static_pointer_cast<rocksdb_cache::BinnedLRUCache>(cache);
+    auto bins = binned_cache->GetBinCount();
+    switch(pri) {
+    case PriorityCache::Priority::PRI0:
+      {
+        // Guarantee that at least 1 chunk of kv cache gets reserved
+        usage += 1;
+        usage += binned_cache->GetPinnedUsage();
         usage += binned_cache->GetHighPriPoolUsage();
+        break;
       }
-      break;
-    }
-  // All other cache items are currently shoved into the LAST priority. 
-  case PriorityCache::Priority::LAST:
-    { 
-      usage = get_cache_usage() - cache->GetPinnedUsage(); 
-      if (g_conf()->rocksdb_cache_type == "binned_lru") {
-        auto binned_cache =
-            std::static_pointer_cast<rocksdb_cache::BinnedLRUCache>(cache);
-        usage -= binned_cache->GetHighPriPoolUsage();
+    case PriorityCache::Priority::PRI1:
+      {
+        break;
       }
-      break;
+    case PriorityCache::Priority::PRI2:
+      {
+        usage += binned_cache->SumBins(0, 1);
+        break;
+      }
+    case PriorityCache::Priority::PRI3:
+      {
+        usage += binned_cache->SumBins(1, 6);
+        break;
+      }
+    case PriorityCache::Priority::PRI4:
+      {
+        usage += binned_cache->SumBins(6, 60);
+        break;
+      }
+    case PriorityCache::Priority::PRI5:
+      {
+        usage += binned_cache->SumBins(60, bins);
+        break;
+      }
+    case PriorityCache::Priority::LAST:
+      {
+        usage += binned_cache->GetUsage() - binned_cache->SumBins(0, bins);
+        break;
+      }
+    default:
+      {
+        break;
+      }
     }
-  default:
-    break;
+  } else {
+    switch(pri) {
+    case PriorityCache::Priority::PRI0:
+      {
+        // Guarantee that at least 1 chunk of kv cache gets reserved
+        usage += 1;
+        usage += cache->GetPinnedUsage();
+        break;
+      }
+    default:
+      {
+        // We have no idea how to assign priorities, so split the total usage
+        // evenly from PRI1 to LAST;
+        auto total = cache->GetUsage() - cache->GetPinnedUsage();
+        usage += (double) total / (PriorityCache::Priority::LAST - 1);
+        break;
+      }
+    } 
   }
-  request = PriorityCache::get_chunk(usage, chunk_bytes);
+  request = PriorityCache::get_chunk(usage, total_bytes);
   request = (request > assigned) ? request - assigned : 0;
   dout(10) << __func__ << " Priority: " << static_cast<uint32_t>(pri) 
            << " Usage: " << usage << " Request: " << request << dendl;
@@ -1314,6 +1352,14 @@ int64_t RocksDBStore::commit_cache_size()
 
 int64_t RocksDBStore::get_cache_capacity() {
   return bbt_opts.block_cache->GetCapacity();
+}
+
+void RocksDBStore::rotate_bins() {
+  if (g_conf()->rocksdb_cache_type == "binned_lru") {
+    auto binned_cache =
+        std::static_pointer_cast<rocksdb_cache::BinnedLRUCache>(bbt_opts.block_cache);
+    binned_cache->RotateBins();
+  }
 }
 
 RocksDBStore::RocksDBWholeSpaceIteratorImpl::~RocksDBWholeSpaceIteratorImpl()

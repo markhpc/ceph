@@ -98,22 +98,33 @@ void BinnedLRUHandleTable::Resize() {
 }
 
 BinnedLRUCacheShard::BinnedLRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                             double high_pri_pool_ratio)
+                             double high_pri_pool_ratio, uint32_t age_bin_count)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
       high_pri_pool_ratio_(high_pri_pool_ratio),
       high_pri_pool_capacity_(0),
       usage_(0),
-      lru_usage_(0) {
+      lru_usage_(0),
+      age_bins(age_bin_count) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
   lru_low_pri_ = &lru_;
   SetCapacity(capacity);
+  RotateBins();
 }
 
 BinnedLRUCacheShard::~BinnedLRUCacheShard() {}
+
+void BinnedLRUCacheShard::RotateBins() {
+  std::lock_guard<std::mutex> l(mutex_);
+  age_bins.push_front(std::make_shared<uint64_t>(0));
+}
+
+uint32_t BinnedLRUCacheShard::GetBinCount() const {
+  return age_bins.capacity();
+}
 
 bool BinnedLRUCacheShard::Unref(BinnedLRUHandle* e) {
   assert(e->refs > 0);
@@ -196,12 +207,17 @@ void BinnedLRUCacheShard::LRU_Remove(BinnedLRUHandle* e) {
   if (e->InHighPriPool()) {
     assert(high_pri_pool_usage_ >= e->charge);
     high_pri_pool_usage_ -= e->charge;
+  } else {
+    assert(*(e->age_bin) >= e->charge);
+    *(e->age_bin) -= e->charge;
   }
 }
 
 void BinnedLRUCacheShard::LRU_Insert(BinnedLRUHandle* e) {
   assert(e->next == nullptr);
   assert(e->prev == nullptr);
+  e->age_bin = age_bins.front();
+
   if (high_pri_pool_ratio_ > 0 && e->IsHighPri()) {
     // Inset "e" to head of LRU list.
     e->next = &lru_;
@@ -220,8 +236,22 @@ void BinnedLRUCacheShard::LRU_Insert(BinnedLRUHandle* e) {
     e->next->prev = e;
     e->SetInHighPriPool(false);
     lru_low_pri_ = e;
+    *(e->age_bin) += e->charge;
   }
   lru_usage_ += e->charge;
+}
+
+uint64_t BinnedLRUCacheShard::SumBins(uint32_t start, uint32_t end) const {
+  auto size = age_bins.size();
+  if (size < start) {
+    return 0;
+  }
+  uint64_t bytes = 0;
+  end = (size < end) ? size : end; 
+  for (auto i = start; i < end; i++) {
+    bytes += *(age_bins[i]);
+  }
+  return bytes;
 }
 
 void BinnedLRUCacheShard::MaintainPoolSize() {
@@ -231,6 +261,7 @@ void BinnedLRUCacheShard::MaintainPoolSize() {
     assert(lru_low_pri_ != &lru_);
     lru_low_pri_->SetInHighPriPool(false);
     high_pri_pool_usage_ -= lru_low_pri_->charge;
+    *(lru_low_pri_->age_bin) += lru_low_pri_->charge;
   }
 }
 
@@ -345,15 +376,13 @@ rocksdb::Status BinnedLRUCacheShard::Insert(const rocksdb::Slice& key, uint32_t 
   // Allocate the memory here outside of the mutex
   // If the cache is full, we'll have to release it
   // It shouldn't happen very often though.
-  BinnedLRUHandle* e = reinterpret_cast<BinnedLRUHandle*>(
-      new char[sizeof(BinnedLRUHandle) - 1 + key.size()]);
+  BinnedLRUHandle* e = new BinnedLRUHandle();
   rocksdb::Status s;
   ceph::autovector<BinnedLRUHandle*> last_reference_list;
 
   e->value = value;
   e->deleter = deleter;
   e->charge = charge;
-  e->key_length = key.size();
   e->flags = 0;
   e->hash = hash;
   e->refs = (handle == nullptr
@@ -362,7 +391,7 @@ rocksdb::Status BinnedLRUCacheShard::Insert(const rocksdb::Slice& key, uint32_t 
   e->next = e->prev = nullptr;
   e->SetInCache(true);
   e->SetPriority(priority);
-  memcpy(e->key_data, key.data(), key.size());
+  e->SetKey(key.data(), key.size());
 
   {
     std::lock_guard<std::mutex> l(mutex_);
@@ -377,7 +406,7 @@ rocksdb::Status BinnedLRUCacheShard::Insert(const rocksdb::Slice& key, uint32_t 
         // into cache and get evicted immediately.
         last_reference_list.push_back(e);
       } else {
-        delete[] reinterpret_cast<char*>(e);
+        delete e;
         *handle = nullptr;
         s = rocksdb::Status::Incomplete("Insert failed due to LRU cache being full.");
       }
@@ -463,7 +492,8 @@ std::string BinnedLRUCacheShard::GetPrintableOptions() const {
 }
 
 BinnedLRUCache::BinnedLRUCache(size_t capacity, int num_shard_bits,
-                   bool strict_capacity_limit, double high_pri_pool_ratio)
+                   bool strict_capacity_limit, double high_pri_pool_ratio,
+                   uint32_t age_bin_count)
     : ShardedCache(capacity, num_shard_bits, strict_capacity_limit) {
   num_shards_ = 1 << num_shard_bits;
   // TODO: Switch over to use mempool
@@ -476,7 +506,7 @@ BinnedLRUCache::BinnedLRUCache(size_t capacity, int num_shard_bits,
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i])
-        BinnedLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio);
+        BinnedLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio, age_bin_count);
   }
 }
 
@@ -545,9 +575,32 @@ size_t BinnedLRUCache::GetHighPriPoolUsage() const {
   return usage;
 }
 
+void BinnedLRUCache::RotateBins() {
+  for (int s = 0; s < num_shards_; s++) {
+    shards_[s].RotateBins();
+  }
+}
+
+uint64_t BinnedLRUCache::SumBins(uint32_t start, uint32_t end) const {
+  uint64_t bytes = 0;
+  for (int s = 0; s < num_shards_; s++) {
+    bytes += shards_[s].SumBins(start, end);
+  }
+  return bytes;
+}
+
+uint32_t BinnedLRUCache::GetBinCount() const {
+  uint32_t result = 0;
+  if (num_shards_ > 0) {
+    result = shards_[0].GetBinCount();
+  }
+  return result;
+}
+
 std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(size_t capacity, int num_shard_bits,
                                    bool strict_capacity_limit,
-                                   double high_pri_pool_ratio) {
+                                   double high_pri_pool_ratio,
+                                   uint32_t age_bin_count) {
   if (num_shard_bits >= 20) {
     return nullptr;  // the cache cannot be sharded into too many fine pieces
   }
@@ -559,7 +612,7 @@ std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(size_t capacity, int num_shard
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
   return std::make_shared<BinnedLRUCache>(capacity, num_shard_bits,
-                                    strict_capacity_limit, high_pri_pool_ratio);
+                                    strict_capacity_limit, high_pri_pool_ratio, age_bin_count);
 }
 
 }  // namespace rocksdb_cache

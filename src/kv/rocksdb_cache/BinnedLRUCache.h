@@ -12,6 +12,8 @@
 
 #include <string>
 #include <mutex>
+#include  <boost/circular_buffer.hpp>
+
 
 #include "ShardedCache.h"
 
@@ -49,7 +51,8 @@ std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(
     size_t capacity,
     int num_shard_bits = -1,
     bool strict_capacity_limit = false,
-    double high_pri_pool_ratio = 0.0);
+    double high_pri_pool_ratio = 0.0,
+    uint32_t age_bin_count = 1);
 
 struct BinnedLRUHandle {
   void* value;
@@ -70,7 +73,14 @@ struct BinnedLRUHandle {
 
   uint32_t hash;     // Hash of key(); used for fast sharding and comparisons
 
-  char key_data[1];  // Beginning of key
+  char* key_data;
+  std::shared_ptr<uint64_t> age_bin; // age bin for this LRU handle
+
+  void SetKey(const char *src_data, size_t length) {
+    key_length = length;
+    key_data = new char[length];
+    memcpy(key_data, src_data, key_length);
+  }
 
   rocksdb::Slice key() const {
     // For cheaper lookups, we allow a temporary Handle object
@@ -118,7 +128,9 @@ struct BinnedLRUHandle {
     if (deleter) {
       (*deleter)(key(), value);
     }
-    delete[] reinterpret_cast<char*>(this);
+    delete[] key_data;
+    delete this;
+//    delete[] reinterpret_cast<char*>(this);
   }
 };
 
@@ -168,7 +180,7 @@ class BinnedLRUHandleTable {
 class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
  public:
   BinnedLRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                double high_pri_pool_ratio);
+                double high_pri_pool_ratio, uint32_t age_bin_count);
   virtual ~BinnedLRUCacheShard();
 
   // Separate from constructor so caller can easily make an array of BinnedLRUCache
@@ -208,6 +220,7 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
 
   virtual std::string GetPrintableOptions() const override;
 
+
   void TEST_GetLRUList(BinnedLRUHandle** lru, BinnedLRUHandle** lru_low_pri);
 
   //  Retrieves number of elements in LRU, for unit test purpose only
@@ -219,6 +232,14 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
 
   // Retrives high pri pool usage
   size_t GetHighPriPoolUsage() const;
+
+  // Rotate the bins
+  void RotateBins();
+  // Get the bin count
+  uint32_t GetBinCount() const;
+
+  // Get the byte counts for a range of age bins
+  uint64_t SumBins(uint32_t start, uint32_t end) const;
 
  private:
   void LRU_Remove(BinnedLRUHandle* e);
@@ -285,12 +306,15 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
   // We don't count mutex_ as the cache's internal state so semantically we
   // don't mind mutex_ invoking the non-const actions.
   mutable std::mutex mutex_;
+
+  // Circular buffer of byte counters for age binning
+  boost::circular_buffer<std::shared_ptr<uint64_t>> age_bins;
 };
 
 class BinnedLRUCache : public ShardedCache {
  public:
   BinnedLRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-           double high_pri_pool_ratio);
+           double high_pri_pool_ratio, uint32_t age_bin_count);
   virtual ~BinnedLRUCache();
   virtual const char* Name() const override { return "BinnedLRUCache"; }
   virtual CacheShard* GetShard(int shard) override;
@@ -308,6 +332,13 @@ class BinnedLRUCache : public ShardedCache {
   double GetHighPriPoolRatio() const;
   // Retrieves high pri pool usage
   size_t GetHighPriPoolUsage() const;
+  // Rotate the bins
+  void RotateBins();
+  // Get the total counts from the starting bin to the ending bin.
+  uint64_t SumBins(uint32_t start, uint32_t end) const;
+  // Get the bin count
+  uint32_t GetBinCount() const;
+
 
  private:
   BinnedLRUCacheShard* shards_;

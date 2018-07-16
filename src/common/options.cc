@@ -3699,12 +3699,12 @@ std::vector<Option> get_global_options() {
     .set_description("When tcmalloc and cache autotuning is enabled, try to keep this many bytes mapped in memory."),
 
     Option("osd_mem_base", Option::TYPE_UINT, Option::LEVEL_DEV)
-    .set_default(768_M)
+    .set_default(1024_M)
     .add_see_also("bluestore_cache_autotune")
     .set_description("When tcmalloc and cache autotuning is enabled, estimate the minimum amount of memory in bytes the OSD will need."),
 
     Option("osd_mem_expected_fragmentation", Option::TYPE_FLOAT, Option::LEVEL_DEV)
-    .set_default(0.15)
+    .set_default(0.10)
     .add_see_also("bluestore_cache_autotune")
     .set_description("When tcmalloc and cache autotuning is enabled, estimate the percent of memory fragmentation."),
 
