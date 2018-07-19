@@ -17,18 +17,23 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 namespace PriorityCache {
   enum Priority {
-    PRI0,  // Reserved for special items
-    PRI1,  // Very-high priority cache items
-    PRI2,  // High priority cache items
-    PRI3,  // Medium-High priority cache items
-    PRI4,  // Medium priority cache items
-    PRI5,  // Medium-Low priority cache items
-    PRI6,  // Low priority cached items
-    PRI7,  // Very-low priority cache items
-    LAST = PRI7,
+    PRI0,
+    PRI1,
+    PRI2,
+    PRI3,
+    PRI4,
+    PRI5,
+    PRI6,
+    PRI7,
+    PRI8,
+    PRI9,
+    PRI10,
+    PRI11,
+    LAST = PRI11,
   };
 
   int64_t get_chunk(uint64_t usage, uint64_t total_bytes);
@@ -42,7 +47,7 @@ namespace PriorityCache {
      * future growth.  Note that the cache may ultimately be allocated less 
      * memory than it requests here.
      */
-    virtual int64_t request_cache_bytes(PriorityCache::Priority pri, uint64_t total_bytes) const = 0;
+    virtual int64_t request_cache_bytes(PriorityCache::Priority pri, uint64_t total_cache) const = 0;
 
     // Get the number of bytes currently allocated to the given priority.
     virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const = 0;
@@ -57,7 +62,14 @@ namespace PriorityCache {
     virtual void add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) = 0;
 
     // Commit the current number of bytes allocated to the cache.
-    virtual int64_t commit_cache_size() = 0;
+    // Extra space is allocated in chunks based on the current total size
+    // of memory available for caches. 
+    virtual int64_t commit_cache_size(uint64_t total_cache) = 0;
+
+    // get the current number of bytes allocated to the cache. this may be
+    // larger than the value returned by get_cache_bytes as it includes extra
+    // space for future growth.
+    virtual int64_t get_commited_size() const = 0;
 
     // Get the ratio of available memory this cache should target.
     virtual double get_cache_ratio() const = 0;
@@ -68,6 +80,15 @@ namespace PriorityCache {
     // Rotate the bins
     virtual void rotate_bins() = 0;
 
+    // Import user intervals (from PRI1 to LAST-1)
+    virtual void import_intervals(const std::vector<uint64_t> &intervals) = 0;
+
+    // Set Interval (PR0 and LAST ignored)
+    virtual void set_intervals(PriorityCache::Priority pri, uint64_t end_interval) = 0;
+
+    // Get Interval
+    virtual uint64_t get_intervals(PriorityCache::Priority pri) const = 0;
+;
     // Get the name of this cache.
     virtual std::string get_cache_name() const = 0;
 

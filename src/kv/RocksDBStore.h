@@ -16,6 +16,7 @@
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/table.h"
+#include "kv/rocksdb_cache/BinnedLRUCache.h"
 #include <errno.h>
 #include "common/errno.h"
 #include "common/dout.h"
@@ -24,6 +25,7 @@
 #include "common/Cond.h"
 #include "common/ceph_context.h"
 #include "common/PriorityCache.h"
+
 
 class PerfCounters;
 
@@ -159,8 +161,7 @@ public:
     compact_thread(this),
     compact_on_mount(false),
     disableWAL(false),
-    enable_rmrange(cct->_conf->rocksdb_enable_rmrange),
-    high_pri_watermark(0)
+    enable_rmrange(cct->_conf->rocksdb_enable_rmrange)
   {}
 
   ~RocksDBStore() override;
@@ -191,7 +192,32 @@ public:
   {
     return logger;
   }
+/*
+  struct RocksDBBinnedCache : public KVBinnedCache {
+    CephContext *cct;
+    rocksdb_cache::BinnedLRUCache *cache;
 
+    RocksDBBinnedCache(CephContext *c, rocksdb_cache::BinnedLRUCache *binned_cache) : 
+        cct(c), cache(binned_cache) {};
+
+    virtual int64_t get_cache_usage() {
+      return static_cast<int64_t>(cache->GetUsage());
+    }
+
+    virtual int64_t request_cache_bytes(
+       PriorityCache::Priority pri) const;
+
+    virtual int64_t commit_cache_size(uint64_t total_cache);
+
+    virtual void rotate_bins() {
+      cache->RotateBins();
+    }
+
+    virtual string get_cache_name() const {
+      return "RocksDB Binned Cache";
+    }
+  };
+*/
   struct  RocksWBHandler: public rocksdb::WriteBatch::Handler {
     std::string seen ;
     int num_seen = 0;
@@ -476,6 +502,11 @@ err:
     return total_size;
   }
 
+  virtual std::shared_ptr<PriorityCache::PriCache> get_priority_cache() const override {
+    return dynamic_pointer_cast<PriorityCache::PriCache>(bbt_opts.block_cache);
+  }
+
+/*
   virtual int64_t request_cache_bytes(
       PriorityCache::Priority pri, uint64_t cache_bytes) const override;
   virtual int64_t commit_cache_size() override;
@@ -484,6 +515,22 @@ err:
   }
   virtual int64_t get_cache_usage() const override;
   virtual void rotate_bins() override;
+
+  virtual void import_intervals(uint64_t[] intervals_array) {
+    intervals = intervals_array;
+  }
+
+  virtual void set_intervals(PriorityCache::Pri pri, uint64_t end_interval) {
+    intervals[pri] = end_interval;
+  }
+
+  virtual uint64_t get_intervals(PriorityCache::Pri pri) {
+    return intervals[pri];
+  }
+*/
+  virtual int64_t get_cache_usage() const override {
+    return static_cast<int64_t>(bbt_opts.block_cache->GetUsage());
+  }
 
   int set_cache_size(uint64_t s) override {
     cache_size = s;

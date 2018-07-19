@@ -21,8 +21,56 @@ using std::vector;
  *
  * Kyoto Cabinet or LevelDB should implement this
  */
-class KeyValueDB : public PriorityCache::PriCache {
+class KeyValueDB {
 public:
+/*
+  struct KVBinnedCache : PriorityCache::PriCache {
+    uint64_t intervals[PriorityCache::Priority::LAST+1] = {0};
+    int64_t cache_bytes[PriorityCache::Priority::LAST+1] = {0};
+    double cache_ratio = 0;
+
+    virtual int64_t get_cache_bytes(PriorityCache::Priority pri) const {
+      return cache_bytes[pri];
+    }
+
+    virtual int64_t get_cache_bytes() const {
+      int64_t total = 0;
+
+      for (int i = 0; i < PriorityCache::Priority::LAST + 1; i++) {
+        PriorityCache::Priority pri = static_cast<PriorityCache::Priority>(i);
+        total += get_cache_bytes(pri);
+      }
+      return total;
+    }
+
+    virtual void set_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+      cache_bytes[pri] = bytes;
+    }
+
+    virtual void add_cache_bytes(PriorityCache::Priority pri, int64_t bytes) {
+      cache_bytes[pri] += bytes;
+    }
+
+    virtual double get_cache_ratio() const {
+      return cache_ratio;
+    }
+
+    virtual void set_cache_ratio(double ratio) {
+      cache_ratio = ratio;
+    }
+
+    virtual void set_intervals(PriorityCache::Priority pri, uint64_t end_interval) {
+      intervals[pri] = end_interval;
+    }
+
+    virtual uint64_t get_intervals(PriorityCache::Priority pri) {
+      return intervals[pri];
+    }
+
+    virtual string get_cache_name() const = 0;
+  };
+*/
+
   /*
    *  See RocksDB's definition of a column family(CF) and how to use it.
    *  The interfaces of KeyValueDB is extended, when a column family is created.
@@ -270,9 +318,6 @@ public:
   typedef std::shared_ptr< WholeSpaceIteratorImpl > WholeSpaceIterator;
 
 private:
-  int64_t cache_bytes[PriorityCache::Priority::LAST+1] = { 0 };
-  double cache_ratio = 0;
-
   // This class filters a WholeSpaceIterator by a prefix.
   class PrefixIteratorImpl : public IteratorImpl {
     const std::string prefix;
@@ -362,6 +407,11 @@ public:
     return -EOPNOTSUPP;
   }
 
+  virtual std::shared_ptr<PriorityCache::PriCache> get_priority_cache() const {
+    return nullptr;
+  }
+
+/*
   // PriCache
 
   virtual int64_t request_cache_bytes(PriorityCache::Priority pri, uint64_t chunk_bytes) const {
@@ -409,7 +459,7 @@ public:
   } 
 
   // End PriCache
-
+*/
   virtual int set_cache_high_pri_pool_ratio(double ratio) {
     return -EOPNOTSUPP;
   }

@@ -13,10 +13,14 @@
 
 #include "BinnedLRUCache.h"
 
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+
+#define dout_context cct
+#define dout_subsys ceph_subsys_rocksdb
+#undef dout_prefix
+#define dout_prefix *_dout << "rocksdb: "
 
 namespace rocksdb_cache {
 
@@ -98,7 +102,7 @@ void BinnedLRUHandleTable::Resize() {
 }
 
 BinnedLRUCacheShard::BinnedLRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                             double high_pri_pool_ratio, uint32_t age_bin_count)
+                             double high_pri_pool_ratio)
     : capacity_(0),
       high_pri_pool_usage_(0),
       strict_capacity_limit_(strict_capacity_limit),
@@ -106,24 +110,28 @@ BinnedLRUCacheShard::BinnedLRUCacheShard(size_t capacity, bool strict_capacity_l
       high_pri_pool_capacity_(0),
       usage_(0),
       lru_usage_(0),
-      age_bins(age_bin_count) {
+      age_bins(1) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
   lru_low_pri_ = &lru_;
   SetCapacity(capacity);
-  RotateBins();
+  rotate_bins();
 }
 
 BinnedLRUCacheShard::~BinnedLRUCacheShard() {}
 
-void BinnedLRUCacheShard::RotateBins() {
+void BinnedLRUCacheShard::rotate_bins() {
   std::lock_guard<std::mutex> l(mutex_);
   age_bins.push_front(std::make_shared<uint64_t>(0));
 }
 
-uint32_t BinnedLRUCacheShard::GetBinCount() const {
+uint32_t BinnedLRUCacheShard::_get_bin_count() const {
   return age_bins.capacity();
+}
+
+void BinnedLRUCacheShard::_set_bin_count(uint32_t count) {
+  age_bins.set_capacity(count);
 }
 
 bool BinnedLRUCacheShard::Unref(BinnedLRUHandle* e) {
@@ -241,7 +249,7 @@ void BinnedLRUCacheShard::LRU_Insert(BinnedLRUHandle* e) {
   lru_usage_ += e->charge;
 }
 
-uint64_t BinnedLRUCacheShard::SumBins(uint32_t start, uint32_t end) const {
+uint64_t BinnedLRUCacheShard::sum_bins(uint32_t start, uint32_t end) const {
   auto size = age_bins.size();
   if (size < start) {
     return 0;
@@ -491,10 +499,12 @@ std::string BinnedLRUCacheShard::GetPrintableOptions() const {
   return std::string(buffer);
 }
 
-BinnedLRUCache::BinnedLRUCache(size_t capacity, int num_shard_bits,
-                   bool strict_capacity_limit, double high_pri_pool_ratio,
-                   uint32_t age_bin_count)
-    : ShardedCache(capacity, num_shard_bits, strict_capacity_limit) {
+BinnedLRUCache::BinnedLRUCache(CephContext *c,
+                               size_t capacity,
+                               int num_shard_bits,
+                               bool strict_capacity_limit,
+                               double high_pri_pool_ratio)
+    : ShardedCache(capacity, num_shard_bits, strict_capacity_limit), cct(c) {
   num_shards_ = 1 << num_shard_bits;
   // TODO: Switch over to use mempool
   int rc = posix_memalign((void**) &shards_, 
@@ -506,7 +516,7 @@ BinnedLRUCache::BinnedLRUCache(size_t capacity, int num_shard_bits,
   size_t per_shard = (capacity + (num_shards_ - 1)) / num_shards_;
   for (int i = 0; i < num_shards_; i++) {
     new (&shards_[i])
-        BinnedLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio, age_bin_count);
+        BinnedLRUCacheShard(per_shard, strict_capacity_limit, high_pri_pool_ratio);
   }
 }
 
@@ -575,32 +585,96 @@ size_t BinnedLRUCache::GetHighPriPoolUsage() const {
   return usage;
 }
 
-void BinnedLRUCache::RotateBins() {
+void BinnedLRUCache::rotate_bins() {
   for (int s = 0; s < num_shards_; s++) {
-    shards_[s].RotateBins();
+    shards_[s].rotate_bins();
   }
 }
 
-uint64_t BinnedLRUCache::SumBins(uint32_t start, uint32_t end) const {
+uint64_t BinnedLRUCache::sum_bins(uint32_t start, uint32_t end) const {
   uint64_t bytes = 0;
   for (int s = 0; s < num_shards_; s++) {
-    bytes += shards_[s].SumBins(start, end);
+    bytes += shards_[s].sum_bins(start, end);
   }
   return bytes;
 }
 
-uint32_t BinnedLRUCache::GetBinCount() const {
+uint32_t BinnedLRUCache::_get_bin_count() const {
   uint32_t result = 0;
   if (num_shards_ > 0) {
-    result = shards_[0].GetBinCount();
+    result = shards_[0]._get_bin_count();
   }
   return result;
 }
 
-std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(size_t capacity, int num_shard_bits,
+void BinnedLRUCache::_set_bin_count(uint32_t count) {
+  for (int s = 0; s < num_shards_; s++) {
+    shards_[s]._set_bin_count(count);
+  }
+}
+
+int64_t BinnedLRUCache::request_cache_bytes(PriorityCache::Priority pri, uint64_t total_cache) const
+{
+  int64_t assigned = get_cache_bytes(pri);
+  int64_t request = 0;
+
+  switch(pri) {
+  case PriorityCache::Priority::PRI0:
+    {
+      // Because we want the high pri cache to grow independently of the low
+      // pri cache, request a chunky allocation independent of the other
+      // priorities.
+      request = PriorityCache::get_chunk(GetHighPriPoolUsage(), total_cache);
+      break;
+    }
+  case PriorityCache::Priority::LAST:
+    {
+      auto max = _get_bin_count();
+      request = GetUsage();
+      request -= GetHighPriPoolUsage();
+      request -= sum_bins(0, max);
+      break;
+    }
+  default:
+    {
+      assert(pri > 0 && pri < PriorityCache::Priority::LAST);
+      auto prev_pri = static_cast<PriorityCache::Priority>(pri - 1);
+      uint64_t start = get_intervals(prev_pri);
+      uint64_t end = get_intervals(pri);
+      request = sum_bins(start, end);
+      break;
+    }
+  }
+  request = (request > assigned) ? request - assigned : 0;
+  ldout(cct, 10) << __func__ << " Priority: " << static_cast<uint32_t>(pri)
+                 << " Request: " << request << dendl;
+  return request;
+}
+
+int64_t BinnedLRUCache::commit_cache_size(uint64_t total_bytes)
+{
+  size_t old_bytes = GetCapacity();
+  int64_t new_bytes = PriorityCache::get_chunk(
+      get_cache_bytes(), total_bytes);
+  ldout(cct, 10) << __func__ << " old: " << old_bytes
+                 << " new: " << new_bytes << dendl;
+  SetCapacity((size_t) new_bytes);
+
+  double ratio =
+      (double) get_cache_bytes(PriorityCache::Priority::PRI0) / new_bytes;
+  ldout(cct, 10) << __func__ << " High Pri Pool Ratio set to " << ratio << dendl;
+  SetHighPriPoolRatio(ratio);
+
+  return new_bytes;
+}
+
+
+std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(
+                                   CephContext *c, 
+                                   size_t capacity, 
+                                   int num_shard_bits,
                                    bool strict_capacity_limit,
-                                   double high_pri_pool_ratio,
-                                   uint32_t age_bin_count) {
+                                   double high_pri_pool_ratio) {
   if (num_shard_bits >= 20) {
     return nullptr;  // the cache cannot be sharded into too many fine pieces
   }
@@ -611,8 +685,8 @@ std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(size_t capacity, int num_shard
   if (num_shard_bits < 0) {
     num_shard_bits = GetDefaultCacheShardBits(capacity);
   }
-  return std::make_shared<BinnedLRUCache>(capacity, num_shard_bits,
-                                    strict_capacity_limit, high_pri_pool_ratio, age_bin_count);
+  return std::make_shared<BinnedLRUCache>(c, capacity, num_shard_bits,
+                                    strict_capacity_limit, high_pri_pool_ratio);
 }
 
 }  // namespace rocksdb_cache
