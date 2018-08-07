@@ -1979,9 +1979,8 @@ private:
     Cond cond;
     Mutex lock;
     bool stop = false;
-    uint64_t autotune_cache_size = 0;
     std::shared_ptr<PriorityCache::PriCache> binned_kv_cache = nullptr; 
-
+    std::shared_ptr<PriorityCache::Manager> pm = nullptr;
     struct MempoolCache : public PriorityCache::PriCache {
       BlueStore *store;
       uint64_t intervals[PriorityCache::Priority::LAST+1] = {0};
@@ -2172,13 +2171,6 @@ private:
   private:
     void _adjust_cache_settings();
     void _trim_shards(bool interval_stats);
-    void _tune_cache_size(bool interval_stats);
-    void _balance_cache(
-        const std::list<std::shared_ptr<PriorityCache::PriCache>>& caches);
-    void _balance_cache_pri(
-        int64_t *mem_avail, 
-        const std::list<std::shared_ptr<PriorityCache::PriCache>>& caches, 
-        PriorityCache::Priority pri);
   } mempool_thread;
 
   // --------------------------------------------------------

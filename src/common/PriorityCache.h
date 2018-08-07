@@ -17,7 +17,10 @@
 
 #include <stdint.h>
 #include <string>
+#include <memory>
 #include <vector>
+#include <unordered_map>
+#include "include/assert.h"
 
 namespace PriorityCache {
   enum Priority {
@@ -88,10 +91,43 @@ namespace PriorityCache {
 
     // Get Interval
     virtual uint64_t get_intervals(PriorityCache::Priority pri) const = 0;
-;
+
     // Get the name of this cache.
     virtual std::string get_cache_name() const = 0;
 
+  };
+
+  struct Manager {
+    CephContext* cct;
+    std::unordered_map<std::string, std::shared_ptr<PriCache>> caches;
+    uint64_t min_mem = 0;
+    uint64_t max_mem = 0;
+    uint64_t target_mem = 0;
+    uint64_t tuned_mem = 0;
+
+    Manager(CephContext *c, uint64_t min, uint64_t max, uint64_t target);
+
+    void set_min_memory(uint64_t min) {
+      min_mem = min;
+    }
+    void set_max_memory(uint64_t max) {
+      max_mem = max;
+    }
+    void set_target_memory(uint64_t target) {
+      target_mem = target;
+    }
+    uint64_t get_tuned_mem() const {
+      return tuned_mem;
+    }
+    void insert(std::string name, std::shared_ptr<PriCache> c) {
+      caches.emplace(name, c);
+    }
+    void erase(std::string name) {
+      caches.erase(name);
+    }
+    void tune_memory(bool interval_stats);
+    void balance();
+    void balance_priority(int64_t *mem_avail, Priority pri);
   };
 }
 

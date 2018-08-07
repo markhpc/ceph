@@ -416,6 +416,9 @@ add_library(common_buffer_obj OBJECT
 add_library(common_texttable_obj OBJECT
   common/TextTable.cc)
 
+add_library(common_prioritycache_obj OBJECT
+  common/PriorityCache.cc)
+
 set(libcommon_files
   ${CMAKE_BINARY_DIR}/src/include/ceph_ver.h
   ceph_ver.c
@@ -545,7 +548,6 @@ set(libcommon_files
   common/dns_resolve.cc
   common/hostname.cc
   common/util.cc
-  common/PriorityCache.cc
   librbd/Features.cc
   arch/probe.cc
   ${auth_files}

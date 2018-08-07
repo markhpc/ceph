@@ -73,6 +73,7 @@ endif()
 
 add_library(os STATIC ${libos_srcs}
   $<TARGET_OBJECTS:kv_objs>
+  $<TARGET_OBJECTS:common_prioritycache_obj>
   $<TARGET_OBJECTS:heap_profiler_objs>)
 
 if(WITH_BLUEFS)
