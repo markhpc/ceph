@@ -198,9 +198,9 @@ void XioConnection::send_keepalive_or_ack_internal(bool ack, const utime_t *tp)
     xcmd->get_bl_ref().append(CEPH_MSGR_TAG_KEEPALIVE);
   }
 
-  const std::list<buffer::ptr>& header = xcmd->get_bl_ref().buffers();
+  const buffer::ptrlist& header = xcmd->get_bl_ref().buffers();
   assert(header.size() == 1);  /* accelio header must be without scatter gather */
-  list<bufferptr>::const_iterator pb = header.begin();
+  buffer::ptrlist::const_iterator pb = header.begin();
   assert(pb->length() < XioMsgHdr::get_max_encoded_length());
   struct xio_msg * msg = xcmd->get_xio_msg();
   msg->out.header.iov_base = (char*) pb->c_str();

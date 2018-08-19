@@ -1399,7 +1399,7 @@ using namespace ceph;
     if (p == ls->end())
       seek(off);
     unsigned left = len;
-    for (std::list<ptr>::const_iterator i = otherl._buffers.begin();
+    for (ptrlist::const_iterator i = otherl._buffers.begin();
 	 i != otherl._buffers.end();
 	 ++i) {
       unsigned l = (*i).length();
@@ -1446,8 +1446,8 @@ using namespace ceph;
 
     // buffer-wise comparison
     if (true) {
-      std::list<ptr>::const_iterator a = _buffers.begin();
-      std::list<ptr>::const_iterator b = other._buffers.begin();
+      ptrlist::const_iterator a = _buffers.begin();
+      ptrlist::const_iterator b = other._buffers.begin();
       unsigned aoff = 0, boff = 0;
       while (a != _buffers.end()) {
 	unsigned len = a->length() - aoff;
@@ -1486,7 +1486,7 @@ using namespace ceph;
 
   bool buffer::list::can_zero_copy() const
   {
-    for (std::list<ptr>::const_iterator it = _buffers.begin();
+    for (ptrlist::const_iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it)
       if (!it->can_zero_copy())
@@ -1503,7 +1503,7 @@ using namespace ceph;
 
   bool buffer::list::is_aligned(unsigned align) const
   {
-    for (std::list<ptr>::const_iterator it = _buffers.begin();
+    for (ptrlist::const_iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) 
       if (!it->is_aligned(align))
@@ -1513,7 +1513,7 @@ using namespace ceph;
 
   bool buffer::list::is_n_align_sized(unsigned align) const
   {
-    for (std::list<ptr>::const_iterator it = _buffers.begin();
+    for (ptrlist::const_iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) 
       if (!it->is_n_align_sized(align))
@@ -1524,7 +1524,7 @@ using namespace ceph;
   bool buffer::list::is_aligned_size_and_memory(unsigned align_size,
 						  unsigned align_memory) const
   {
-    for (std::list<ptr>::const_iterator it = _buffers.begin();
+    for (ptrlist::const_iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) {
       if (!it->is_aligned(align_memory) || !it->is_n_align_sized(align_size))
@@ -1534,7 +1534,7 @@ using namespace ceph;
   }
 
   bool buffer::list::is_zero() const {
-    for (std::list<ptr>::const_iterator it = _buffers.begin();
+    for (ptrlist::const_iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) {
       if (!it->is_zero()) {
@@ -1546,7 +1546,7 @@ using namespace ceph;
 
   void buffer::list::zero()
   {
-    for (std::list<ptr>::iterator it = _buffers.begin();
+    for (ptrlist::iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it)
       it->zero();
@@ -1556,7 +1556,7 @@ using namespace ceph;
   {
     assert(o+l <= _len);
     unsigned p = 0;
-    for (std::list<ptr>::iterator it = _buffers.begin();
+    for (ptrlist::iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) {
       if (p + it->length() > o) {
@@ -1644,7 +1644,7 @@ using namespace ceph;
   void buffer::list::rebuild(ptr& nb)
   {
     unsigned pos = 0;
-    for (std::list<ptr>::iterator it = _buffers.begin();
+    for (ptrlist::iterator it = _buffers.begin();
 	 it != _buffers.end();
 	 ++it) {
       nb.copy_in(pos, it->length(), it->c_str(), false);
@@ -1673,7 +1673,7 @@ using namespace ceph;
 	&& _len > (max_buffers * align_size)) {
       align_size = round_up_to(round_up_to(_len, max_buffers) / max_buffers, align_size);
     }
-    std::list<ptr>::iterator p = _buffers.begin();
+    ptrlist::iterator p = _buffers.begin();
     while (p != _buffers.end()) {
       // keep anything that's already align and sized aligned
       if (p->is_aligned(align_memory) && p->is_n_align_sized(align_size)) {
@@ -1875,7 +1875,7 @@ using namespace ceph;
   void buffer::list::append(const list& bl)
   {
     _len += bl._len;
-    for (std::list<ptr>::const_iterator p = bl._buffers.begin();
+    for (ptrlist::const_iterator p = bl._buffers.begin();
 	 p != bl._buffers.end();
 	 ++p) 
       _buffers.push_back(*p);
@@ -1924,7 +1924,7 @@ using namespace ceph;
     if (n >= _len)
       throw end_of_buffer();
     
-    for (std::list<ptr>::const_iterator p = _buffers.begin();
+    for (ptrlist::const_iterator p = _buffers.begin();
 	 p != _buffers.end();
 	 ++p) {
       if (n >= p->length()) {
@@ -1944,7 +1944,7 @@ using namespace ceph;
     if (_buffers.empty())
       return 0;                         // no buffers
 
-    std::list<ptr>::const_iterator iter = _buffers.begin();
+    ptrlist::const_iterator iter = _buffers.begin();
     ++iter;
 
     if (iter != _buffers.end())
@@ -1955,7 +1955,7 @@ using namespace ceph;
   string buffer::list::to_str() const {
     string s;
     s.reserve(length());
-    for (std::list<ptr>::const_iterator p = _buffers.begin();
+    for (ptrlist::const_iterator p = _buffers.begin();
 	 p != _buffers.end();
 	 ++p) {
       if (p->length()) {
@@ -1975,7 +1975,7 @@ using namespace ceph;
     }
 
     unsigned off = orig_off;
-    std::list<ptr>::iterator curbuf = _buffers.begin();
+    ptrlist::iterator curbuf = _buffers.begin();
     while (off > 0 && off >= curbuf->length()) {
       off -= curbuf->length();
       ++curbuf;
@@ -2015,7 +2015,7 @@ using namespace ceph;
     clear();
 
     // skip off
-    std::list<ptr>::const_iterator curbuf = other._buffers.begin();
+    ptrlist::const_iterator curbuf = other._buffers.begin();
     while (off > 0 &&
 	   off >= curbuf->length()) {
       // skip this buffer
@@ -2058,7 +2058,7 @@ using namespace ceph;
     //cout << "splice off " << off << " len " << len << " ... mylen = " << length() << std::endl;
       
     // skip off
-    std::list<ptr>::iterator curbuf = _buffers.begin();
+    ptrlist::iterator curbuf = _buffers.begin();
     while (off > 0) {
       assert(curbuf != _buffers.end());
       if (off >= (*curbuf).length()) {
@@ -2114,7 +2114,7 @@ using namespace ceph;
   {
     list s;
     s.substr_of(*this, off, len);
-    for (std::list<ptr>::const_iterator it = s._buffers.begin(); 
+    for (ptrlist::const_iterator it = s._buffers.begin(); 
 	 it != s._buffers.end(); 
 	 ++it)
       if (it->length())
@@ -2305,7 +2305,7 @@ int buffer::list::write_fd(int fd) const
   int iovlen = 0;
   ssize_t bytes = 0;
 
-  std::list<ptr>::const_iterator p = _buffers.begin();
+  ptrlist::const_iterator p = _buffers.begin();
   while (p != _buffers.end()) {
     if (p->length() > 0) {
       iov[iovlen].iov_base = (void *)p->c_str();
@@ -2354,7 +2354,7 @@ int buffer::list::write_fd(int fd, uint64_t offset) const
 {
   iovec iov[IOV_MAX];
 
-  std::list<ptr>::const_iterator p = _buffers.begin();
+  ptrlist::const_iterator p = _buffers.begin();
   uint64_t left_pbrs = _buffers.size();
   while (left_pbrs) {
     ssize_t bytes = 0;
@@ -2391,7 +2391,7 @@ int buffer::list::write_fd_zero_copy(int fd) const
     return -errno;
   if (errno == ESPIPE)
     off_p = NULL;
-  for (std::list<ptr>::const_iterator it = _buffers.begin();
+  for (ptrlist::const_iterator it = _buffers.begin();
        it != _buffers.end(); ++it) {
     int r = it->zero_copy_to_fd(fd, off_p);
     if (r < 0)
@@ -2408,7 +2408,7 @@ __u32 buffer::list::crc32c(__u32 crc) const
   int cache_hits = 0;
   int cache_adjusts = 0;
 
-  for (std::list<ptr>::const_iterator it = _buffers.begin();
+  for (ptrlist::const_iterator it = _buffers.begin();
        it != _buffers.end();
        ++it) {
     if (it->length()) {
@@ -2455,7 +2455,7 @@ __u32 buffer::list::crc32c(__u32 crc) const
 
 void buffer::list::invalidate_crc()
 {
-  for (std::list<ptr>::const_iterator p = _buffers.begin(); p != _buffers.end(); ++p) {
+  for (ptrlist::const_iterator p = _buffers.begin(); p != _buffers.end(); ++p) {
     raw *r = p->get_raw();
     if (r) {
       r->invalidate_crc();
@@ -2468,7 +2468,7 @@ void buffer::list::invalidate_crc()
  */
 void buffer::list::write_stream(std::ostream &out) const
 {
-  for (std::list<ptr>::const_iterator p = _buffers.begin(); p != _buffers.end(); ++p) {
+  for (ptrlist::const_iterator p = _buffers.begin(); p != _buffers.end(); ++p) {
     if (p->length() > 0) {
       out.write(p->c_str(), p->length());
     }
