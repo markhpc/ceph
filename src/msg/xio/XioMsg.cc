@@ -40,7 +40,7 @@ int XioDispatchHook::release_msgs()
   ceph_msg_header _ceph_msg_header;
   ceph_msg_footer _ceph_msg_footer;
   XioMsgHdr hdr (_ceph_msg_header, _ceph_msg_footer, 0 /* features */);
-  const std::list<buffer::ptr>& hdr_buffers = hdr.get_bl().buffers();
+  const buffer::ptrlist& hdr_buffers = hdr.get_bl().buffers();
   assert(hdr_buffers.size() == 1); /* accelio header is small without scatter gather */
   return hdr_buffers.begin()->length();
 }

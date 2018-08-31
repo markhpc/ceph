@@ -42,6 +42,8 @@
 #include <iomanip>
 #include <list>
 #include <vector>
+#include <deque>
+#include <boost/container/small_vector.hpp>
 #include <string>
 #if __cplusplus >= 201703L
 #include <string_view>
@@ -382,7 +384,9 @@ namespace buffer CEPH_BUFFER_API {
    * list - the useful bit!
    */
 
-  typedef std::list<ptr> ptrlist;
+//  typedef std::list<ptr> ptrlist;
+  typedef boost::container::small_vector<ptr, 4> ptrlist;
+//  typedef std::deque<ptr> ptrlist;
 
   class CEPH_BUFFER_API list {
     // my private bits
@@ -405,23 +409,20 @@ namespace buffer CEPH_BUFFER_API {
       typedef typename std::conditional<is_const,
 					const ptrlist,
 					ptrlist >::type list_t;
-      typedef typename std::conditional<is_const,
-					typename ptrlist::const_iterator,
-					typename ptrlist::iterator>::type list_iter_t;
       bl_t* bl;
       list_t* ls;  // meh.. just here to avoid an extra pointer dereference..
       unsigned off; // in bl
-      list_iter_t p;
+      size_t curidx; // meh.. to save bl::seeks();
       unsigned p_off;   // in *p
       friend class iterator_impl<true>;
 
     public:
       // constructor.  position.
       iterator_impl()
-	: bl(0), ls(0), off(0), p_off(0) {}
+	: bl(0), ls(0), off(0), curidx(0), p_off(0) {}
       iterator_impl(bl_t *l, unsigned o=0);
-      iterator_impl(bl_t *l, unsigned o, list_iter_t ip, unsigned po)
-	: bl(l), ls(&bl->_buffers), off(o), p(ip), p_off(po) {}
+      iterator_impl(bl_t *l, unsigned o, size_t idx, unsigned po)
+	: bl(l), ls(&bl->_buffers), off(o), curidx(idx), p_off(po) {}
       iterator_impl(const list::iterator& i);
 
       /// get current iterator offset in buffer::list
@@ -432,8 +433,7 @@ namespace buffer CEPH_BUFFER_API {
 
       /// true if iterator is at the end of the buffer::list
       bool end() const {
-	return p == ls->end();
-	//return off == bl->length();
+	return off == bl->length();
       }
 
       void advance(int o);
@@ -480,7 +480,7 @@ namespace buffer CEPH_BUFFER_API {
     public:
       iterator() = default;
       iterator(bl_t *l, unsigned o=0);
-      iterator(bl_t *l, unsigned o, list_iter_t ip, unsigned po);
+      iterator(bl_t *l, unsigned o, size_t idx, unsigned po);
 
       void advance(int o);
       void seek(unsigned o);
@@ -783,12 +783,14 @@ namespace buffer CEPH_BUFFER_API {
 	return;
       _buffers.push_back(bp);
       _len += bp.length();
+      last_p = begin();
     }
     void push_back(ptr&& bp) {
       if (bp.length() == 0)
 	return;
       _len += bp.length();
       _buffers.push_back(std::move(bp));
+      last_p = begin();
     }
     void push_back(raw *r) {
       push_back(ptr(r));
@@ -848,7 +850,7 @@ namespace buffer CEPH_BUFFER_API {
       return iterator(this, 0);
     }
     iterator end() {
-      return iterator(this, _len, _buffers.end(), 0);
+      return iterator(this, _len, _buffers.size(), 0);
     }
 
     const_iterator begin() const {
@@ -858,7 +860,7 @@ namespace buffer CEPH_BUFFER_API {
       return begin();
     }
     const_iterator end() const {
-      return const_iterator(this, _len, _buffers.end(), 0);
+      return const_iterator(this, _len, _buffers.size(), 0);
     }
 
     // crope lookalikes.
