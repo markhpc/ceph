@@ -1086,6 +1086,8 @@ public:
 
     std::atomic<uint64_t> num_extents = {0};
     std::atomic<uint64_t> num_blobs = {0};
+    std::atomic<uint64_t> onode_max = {0};
+    std::atomic<uint64_t> buffer_max = {0};
 
     boost::circular_buffer<std::shared_ptr<int64_t>> onode_age_bins;
     boost::circular_buffer<std::shared_ptr<int64_t>> buffer_age_bins;
@@ -1136,11 +1138,24 @@ public:
       --num_blobs;
     }
 
+    void set_onode_max(uint64_t max) {
+      onode_max = max;
+    }
+
+    void set_buffer_max(uint64_t max) {
+      buffer_max = max;
+    }
+
     void trim(uint64_t onode_max, uint64_t buffer_max);
 
     void trim_all();
 
+    void trim_onodes(uint64_t max);
+    void trim_buffers(uint64_t max);
+
     virtual void _trim(uint64_t onode_max, uint64_t buffer_max) = 0;
+    virtual void _trim_onodes(uint64_t max) = 0;
+    virtual void _trim_buffers(uint64_t max) = 0;
 
     virtual void add_stats(uint64_t *onodes, uint64_t *extents,
 			   uint64_t *blobs,
@@ -1186,6 +1201,11 @@ public:
       return onode_lru.size();
     }
     void _add_onode(OnodeRef& o, int level) override {
+      if (onode_max > 0) {
+        trim_onodes(onode_max - 1);
+      } else {
+        trim_onodes(0);
+      }
       if (level > 0)
 	onode_lru.push_front(*o);
       else
@@ -1205,6 +1225,11 @@ public:
       return buffer_size;
     }
     void _add_buffer(Buffer *b, int level, Buffer *near) override {
+      if (buffer_max > b->length) {
+        trim_buffers(buffer_max - b->length);
+      } else {
+        trim_buffers(0);
+      }
       if (near) {
 	auto q = buffer_lru.iterator_to(*near);
 	buffer_lru.insert(q, *b);
@@ -1246,6 +1271,8 @@ public:
     }
 
     void _trim(uint64_t onode_max, uint64_t buffer_max) override;
+    void _trim_onodes(uint64_t max) override;
+    void _trim_buffers(uint64_t max) override;
 
     void add_stats(uint64_t *onodes, uint64_t *extents,
 		   uint64_t *blobs,
@@ -1304,6 +1331,12 @@ public:
       return onode_lru.size();
     }
     void _add_onode(OnodeRef& o, int level) override {
+      if (onode_max > 0) {
+        trim_onodes(onode_max - 1);
+      } else {
+        trim_onodes(0);
+      }
+
       if (level > 0)
 	onode_lru.push_front(*o);
       else
@@ -1347,6 +1380,8 @@ public:
     }
 
     void _trim(uint64_t onode_max, uint64_t buffer_max) override;
+    void _trim_onodes(uint64_t max) override;
+    void _trim_buffers(uint64_t max) override;
 
     void add_stats(uint64_t *onodes, uint64_t *extents,
 		   uint64_t *blobs,
