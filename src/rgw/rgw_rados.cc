@@ -7992,13 +7992,22 @@ int RGWRados::cls_bucket_list_ordered(RGWBucketInfo& bucket_info,
   vector<RGWRados::ent_map_t::iterator> vcurrents;
   vector<RGWRados::ent_map_t::iterator> vends;
   vector<string> vnames;
+  vector<bool> vmore;
+
   vcurrents.reserve(list_results.size());
   vends.reserve(list_results.size());
   vnames.reserve(list_results.size());
+  vmore.reserve(list_results.size());
+
   for (auto& iter : list_results) {
-    vcurrents.push_back(iter.second.dir.m.begin());
-    vends.push_back(iter.second.dir.m.end());
+    auto begin = iter.second.dir.m.begin();
+    auto end = iter.second.dir.m.end();
+    vcurrents.push_back(begin);
+    vends.push_back(end);
     vnames.push_back(oids[iter.first]);
+    // If we didn't get num_entries_per_shard, we know that this shard
+    // can not supply any more entries and we note that here.
+    vmore.push_back(std::distance(begin, end) == num_entries_per_shard);
   }
 
   // create a map to track the next candidate entry from each shard,
@@ -8048,14 +8057,12 @@ int RGWRados::cls_bucket_list_ordered(RGWBucketInfo& bucket_info,
     // refresh the candidates map
     candidates.erase(candidates.begin());
     ++vcurrents[pos];
-    if (vcurrents[pos] == vends[pos]) {
-      // once we exhaust one shard, we need to stop, as we cannot be
-      // certain that one of the next entries needs to come from that
-      // shard; S3 and swift protocols allow returning fewer than what
-      // was requested
+    if (vcurrents[pos] != vends[pos]) {
+      candidates[vcurrents[pos]->first] = pos;
+    } else if (vmore[pos]) {
+      // we can't be sure if there are more entries for this shard
       break;
     }
-    candidates[vcurrents[pos]->first] = pos;
   } // while we haven't provided requested # of result entries
 
   // suggest updates if there is any
