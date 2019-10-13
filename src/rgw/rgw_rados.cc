@@ -7931,15 +7931,7 @@ int RGWRados::cls_obj_set_bucket_tag_timeout(RGWBucketInfo& bucket_info, uint64_
 uint32_t RGWRados::calc_ordered_bucket_list_per_shard(uint32_t num_entries,
 						      uint32_t num_shards)
 {
-  constexpr uint32_t min_read = 8;
-  constexpr double excess_factor = 0.1; // read 10% extra
-
-  const uint32_t safety_per_shard =
-    uint32_t((1.0 + excess_factor) * num_entries / num_shards);
-  const uint32_t goal_per_shard = std::min(num_entries, safety_per_shard);
-  const uint32_t num_entries_per_shard = std::max(goal_per_shard, min_read);
-
-  return num_entries_per_shard;
+  return static_cast<uint32_t>((1.0 * num_entries / num_shards) + sqrt(2.0 * num_entries*log(num_shards)/num_shards) + 1);
 }
 
 
