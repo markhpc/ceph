@@ -714,6 +714,7 @@ void PGLog::_write_log_and_missing_wo_missing(
   set<string> *log_keys_debug
   )
 {
+/*
   // dout(10) << "write_log_and_missing, clearing up to " << dirty_to << dendl;
   if (touch_log)
     t.touch(coll, log_oid);
@@ -730,7 +731,7 @@ void PGLog::_write_log_and_missing_wo_missing(
       dirty_from.get_key_name(), eversion_t::max().get_key_name());
     clear_after(log_keys_debug, dirty_from.get_key_name());
   }
-
+*/
   for (list<pg_log_entry_t>::iterator p = log.log.begin();
        p != log.log.end() && p->version <= dirty_to;
        ++p) {
@@ -759,7 +760,7 @@ void PGLog::_write_log_and_missing_wo_missing(
       log_keys_debug->insert(i->first);
     }
   }
-
+/*
   // process dups after log_keys_debug is filled, so dups do not
   // end up in that set
   if (dirty_to_dups != eversion_t()) {
@@ -777,7 +778,7 @@ void PGLog::_write_log_and_missing_wo_missing(
       coll, log_oid,
       dirty_from_dup.get_key_name(), max.get_key_name());
   }
-
+*/
   for (const auto& entry : log.dups) {
     if (entry.version > dirty_to_dups)
       break;
@@ -843,7 +844,7 @@ void PGLog::_write_log_and_missing(
     to_remove.emplace(std::move(key));
   }
   trimmed.clear();
-
+  /*
   if (touch_log)
     t.touch(coll, log_oid);
   if (dirty_to != eversion_t()) {
@@ -859,7 +860,7 @@ void PGLog::_write_log_and_missing(
       dirty_from.get_key_name(), eversion_t::max().get_key_name());
     clear_after(log_keys_debug, dirty_from.get_key_name());
   }
-
+  */
   for (list<pg_log_entry_t>::iterator p = log.log.begin();
        p != log.log.end() && p->version <= dirty_to;
        ++p) {
@@ -888,7 +889,7 @@ void PGLog::_write_log_and_missing(
       log_keys_debug->insert(i->first);
     }
   }
-
+/*
   // process dups after log_keys_debug is filled, so dups do not
   // end up in that set
   if (dirty_to_dups != eversion_t()) {
@@ -906,7 +907,7 @@ void PGLog::_write_log_and_missing(
       coll, log_oid,
       dirty_from_dup.get_key_name(), max.get_key_name());
   }
-
+*/
   for (const auto& entry : log.dups) {
     if (entry.version > dirty_to_dups)
       break;
@@ -954,9 +955,10 @@ void PGLog::_write_log_and_missing(
       log.get_rollback_info_trimmed_to(),
       (*km)["rollback_info_trimmed_to"]);
   }
-
+/*
   if (!to_remove.empty())
     t.omap_rmkeys(coll, log_oid, to_remove);
+*/
 }
 
 void PGLog::rebuild_missing_set_with_deletes(

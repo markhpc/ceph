@@ -509,6 +509,7 @@ void ReplicatedBackend::submit_transaction(
   add_temp_objs(added);
   clear_temp_objs(removed);
 
+/*
   parent->log_operation(
     log_entries,
     hset_history,
@@ -516,7 +517,7 @@ void ReplicatedBackend::submit_transaction(
     at_version,
     true,
     op_t);
-  
+*/
   op_t.register_on_commit(
     parent->bless_context(
       new C_OSD_OnOpCommit(this, &op)));
