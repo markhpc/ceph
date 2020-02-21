@@ -745,7 +745,7 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
     dout(7) << "failed inode filelock.can_wrlock" << dendl;
     return false;
   }
-  if (!diri->nestlock.can_wrlock(diri->get_loner()))
+  if (!diri->nestlock.can_wrlock(diri->get_loner())) {
     dout(7) << "failed inode nestlock.can_wrlock" << dendl;
     return false;
   }
