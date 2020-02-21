@@ -686,7 +686,7 @@ void MDBalancer::prep_rebalance(int beat)
     for (const auto& [load, rank] : load_map) {
       if (load < target_load * (1.0 + g_conf()->mds_bal_min_rebalance)) {
 	dout(7) << " mds." << rank << " is underloaded or barely overloaded." << dendl;
-	mds_last_epoch_under_map[p.second] = beat_epoch;
+	mds_last_epoch_under_map[rank] = beat_epoch;
       }
     }
 
