@@ -741,12 +741,12 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
 {
   CInode *diri = dir->get_inode();
 
-  if (!diri->filelock.can_wrlock(diri->get_loner())) {
-    dout(7) << "failed inode filelock.can_wrlock" << dendl;
+  if (!diri->filelock.can_force_wrlock(diri->get_loner())) {
+    dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
     return false;
   }
-  if (!diri->nestlock.can_wrlock(diri->get_loner())) {
-    dout(7) << "failed inode nestlock.can_wrlock" << dendl;
+  if (!diri->nestlock.can_force_wrlock(diri->get_loner())) {
+    dout(7) << "failed inode nestlock.can_force_wrlock" << dendl;
     return false;
   }
 
@@ -779,6 +779,8 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
   mds->locker->wrlock_force(&diri->filelock, mut);
   mds->locker->wrlock_force(&diri->nestlock, mut);
 
+//  mds->locker->wrlock_try(&diri->filelock, mut);
+//  mds->locker->wrlock_try(&diri->nestlock, mut);
   return true;
 }
 
