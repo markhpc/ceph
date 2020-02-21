@@ -740,7 +740,7 @@ public:
 bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
 {
   CInode *diri = dir->get_inode();
-
+/*
   if (!diri->filelock.can_force_wrlock(diri->get_loner())) {
     dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
     return false;
@@ -748,6 +748,25 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
   if (!diri->nestlock.can_force_wrlock(diri->get_loner())) {
     dout(7) << "failed inode nestlock.can_force_wrlock" << dendl;
     return false;
+  }
+*/
+
+  int tries = 0;
+  while (!diri->filelock.can_wrlock(diri->get_loner())) {
+    if (tries > 20) {
+      dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::millseconds(1));
+    tries++;
+  }
+  while (!diri->nestlock.can_wrlock(diri->get_loner())) {
+    if (tries > 20) {
+      dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::millseconds(1));
+    tries++;
   }
 
   MutationImpl::LockOpVec lov;
@@ -779,8 +798,6 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
   mds->locker->wrlock_force(&diri->filelock, mut);
   mds->locker->wrlock_force(&diri->nestlock, mut);
 
-//  mds->locker->wrlock_try(&diri->filelock, mut);
-//  mds->locker->wrlock_try(&diri->nestlock, mut);
   return true;
 }
 
