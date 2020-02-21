@@ -757,7 +757,7 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
       dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
       return false;
     }
-    std::this_thread::sleep_for(std::chrono::millseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
     tries++;
   }
   while (!diri->nestlock.can_wrlock(diri->get_loner())) {
