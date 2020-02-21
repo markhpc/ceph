@@ -711,7 +711,7 @@ void Migrator::maybe_do_queued_export()
     if (!dir) continue;
     if (!dir->is_auth()) continue;
 
-    dout(0) << "nicely exporting to mds." << dest << " " << *dir << dendl;
+    dout(3) << "nicely exporting to mds." << dest << " " << *dir << dendl;
 
     export_dir(dir, dest);
   }
@@ -787,7 +787,7 @@ void Migrator::export_dir(CDir *dir, mds_rank_t dest)
   ceph_assert(dest != mds->get_nodeid());
    
   if (!mds->is_stopping() && !dir->inode->is_exportable(dest)) {
-    dout(25) << "dir is export pinned" << dendl;
+    dout(7) << "dir is export pinned" << dendl;
     return;
   }
 
@@ -854,7 +854,7 @@ void Migrator::export_dir(CDir *dir, mds_rank_t dest)
 	ceph_assert(bd->is_auth());
 	dir->state_set(CDir::STATE_AUXSUBTREE);
 	mds->mdcache->adjust_subtree_auth(dir, mds->get_nodeid());
-	dout(0) << "export_dir: create aux subtree " << *bd << " under " << *dir << dendl;
+	dout(7) << "export_dir: create aux subtree " << *bd << " under " << *dir << dendl;
       }
     }
   }
@@ -1053,7 +1053,7 @@ void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
   if (!mds->is_export_target(dest)) {
     dout(7) << "dest is not yet an export target" << dendl;
     if (count > 3) {
-      dout(5) << "dest has not been added as export target after three MDSMap epochs, canceling export" << dendl;
+      dout(7) << "dest has not been added as export target after three MDSMap epochs, canceling export" << dendl;
       export_try_cancel(dir);
       return;
     }
@@ -2156,7 +2156,7 @@ void Migrator::handle_export_notify_ack(const cref_t<MExportDirNotifyAck> &m)
 
 void Migrator::export_finish(CDir *dir)
 {
-  dout(5) << "export_finish " << *dir << dendl;
+  dout(3) << "export_finish " << *dir << dendl;
 
   assert (g_conf()->mds_kill_export_at != 12);
   map<CDir*,export_state_t>::iterator it = export_state.find(dir);
@@ -2312,7 +2312,7 @@ void Migrator::handle_export_discover(const cref_t<MExportDirDiscover> &m, bool 
 
   C_MDS_ExportDiscoverFactory cf(this, m);
   if (!mds->mdcache->is_open()) {
-    dout(5) << " waiting for root" << dendl;
+    dout(10) << " waiting for root" << dendl;
     mds->mdcache->wait_for_open(cf.build());
     return;
   }
