@@ -753,7 +753,7 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
 
   int tries = 0;
   while (!diri->filelock.can_wrlock(diri->get_loner())) {
-    if (tries > 20) {
+    if (tries > 100) {
       dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
       return false;
     }
@@ -761,7 +761,7 @@ bool Migrator::export_try_grab_locks(CDir *dir, MutationRef& mut)
     tries++;
   }
   while (!diri->nestlock.can_wrlock(diri->get_loner())) {
-    if (tries > 20) {
+    if (tries > 100) {
       dout(7) << "failed inode filelock.can_force_wrlock" << dendl;
       return false;
     }
