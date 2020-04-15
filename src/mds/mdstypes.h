@@ -585,6 +585,8 @@ struct inode_t {
   quota_info_t quota;
 
   mds_rank_t export_pin = MDS_RANK_NONE;
+  uint64_t expected_files = 0;
+  uint32_t expected_file_bits = 0;
 
   // special stuff
   version_t version = 0;           // auth only
@@ -608,7 +610,7 @@ private:
 template<template<typename> class Allocator>
 void inode_t<Allocator>::encode(bufferlist &bl, uint64_t features) const
 {
-  ENCODE_START(15, 6, bl);
+  ENCODE_START(16, 6, bl);
 
   encode(ino, bl);
   encode(rdev, bl);
@@ -659,14 +661,15 @@ void inode_t<Allocator>::encode(bufferlist &bl, uint64_t features) const
   encode(change_attr, bl);
 
   encode(export_pin, bl);
-
+  encode(expected_files, bl);
+  encode(expected_file_bits, bl);
   ENCODE_FINISH(bl);
 }
 
 template<template<typename> class Allocator>
 void inode_t<Allocator>::decode(bufferlist::const_iterator &p)
 {
-  DECODE_START_LEGACY_COMPAT_LEN(15, 6, 6, p);
+  DECODE_START_LEGACY_COMPAT_LEN(16, 6, 6, p);
 
   decode(ino, p);
   decode(rdev, p);
@@ -757,6 +760,13 @@ void inode_t<Allocator>::decode(bufferlist::const_iterator &p)
     export_pin = MDS_RANK_NONE;
   }
 
+  if (struct_v >= 16) {
+    decode(expected_files, p);
+    decode(expected_file_bits, p);
+  } else {
+    expected_files = 0;
+    expected_file_bits = 0;
+  }
   DECODE_FINISH(p);
 }
 

@@ -904,6 +904,10 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   mds_rank_t get_export_pin(bool inherit=true) const;
   bool is_exportable(mds_rank_t dest) const;
 
+  void set_expected_files(uint64_t files);
+  uint64_t get_expected_files() const;
+  uint32_t get_expected_file_bits() const;
+
   void print(ostream& out) override;
   void dump(Formatter *f, int flags = DUMP_DEFAULT) const;
 
