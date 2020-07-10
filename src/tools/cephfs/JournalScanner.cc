@@ -93,7 +93,7 @@ int JournalScanner::scan_pointer()
 
     JournalPointer jp;
     try {
-      auto q = pointer_bl.cbegin();
+      auto q = pointer_bl.begin().get_current_ptr().cbegin();
       jp.decode(q);
     } catch(buffer::error &e) {
       derr << "Pointer " << pointer_oid << " is corrupt: " << e.what() << dendl;

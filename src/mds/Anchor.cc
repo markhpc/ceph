@@ -16,26 +16,6 @@
 
 #include "common/Formatter.h"
 
-void Anchor::encode(bufferlist &bl) const
-{
-  ENCODE_START(1, 1, bl);
-  encode(ino, bl);
-  encode(dirino, bl);
-  encode(d_name, bl);
-  encode(d_type, bl);
-  ENCODE_FINISH(bl);
-}
-
-void Anchor::decode(bufferlist::const_iterator &bl)
-{
-  DECODE_START(1, bl);
-  decode(ino, bl);
-  decode(dirino, bl);
-  decode(d_name, bl);
-  decode(d_type, bl);
-  DECODE_FINISH(bl);
-}
-
 void Anchor::dump(Formatter *f) const
 {
   f->dump_unsigned("ino", ino);

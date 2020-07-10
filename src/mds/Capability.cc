@@ -23,37 +23,6 @@
  * Capability::Export
  */
 
-void Capability::Export::encode(ceph::buffer::list &bl) const
-{
-  ENCODE_START(3, 2, bl);
-  encode(cap_id, bl);
-  encode(wanted, bl);
-  encode(issued, bl);
-  encode(pending, bl);
-  encode(client_follows, bl);
-  encode(seq, bl);
-  encode(mseq, bl);
-  encode(last_issue_stamp, bl);
-  encode(state, bl);
-  ENCODE_FINISH(bl);
-}
-
-void Capability::Export::decode(ceph::buffer::list::const_iterator &p)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(3, 2, 2, p);
-  decode(cap_id, p);
-  decode(wanted, p);
-  decode(issued, p);
-  decode(pending, p);
-  decode(client_follows, p);
-  decode(seq, p);
-  decode(mseq, p);
-  decode(last_issue_stamp, p);
-  if (struct_v >= 3)
-    decode(state, p);
-  DECODE_FINISH(p);
-}
-
 void Capability::Export::dump(ceph::Formatter *f) const
 {
   f->dump_unsigned("cap_id", cap_id);
@@ -78,24 +47,6 @@ void Capability::Export::generate_test_instances(std::list<Capability::Export*>&
   ls.back()->last_issue_stamp = utime_t(6, 7);
 }
 
-void Capability::Import::encode(ceph::buffer::list &bl) const
-{
-  ENCODE_START(1, 1, bl);
-  encode(cap_id, bl);
-  encode(issue_seq, bl);
-  encode(mseq, bl);
-  ENCODE_FINISH(bl);
-}
-
-void Capability::Import::decode(ceph::buffer::list::const_iterator &bl)
-{
-  DECODE_START(1, bl);
-  decode(cap_id, bl);
-  decode(issue_seq, bl);
-  decode(mseq, bl);
-  DECODE_FINISH(bl);
-}
-
 void Capability::Import::dump(ceph::Formatter *f) const
 {
   f->dump_unsigned("cap_id", cap_id);
@@ -106,24 +57,6 @@ void Capability::Import::dump(ceph::Formatter *f) const
 /*
  * Capability::revoke_info
  */
-
-void Capability::revoke_info::encode(ceph::buffer::list& bl) const
-{
-  ENCODE_START(2, 2, bl)
-  encode(before, bl);
-  encode(seq, bl);
-  encode(last_issue, bl);
-  ENCODE_FINISH(bl);
-}
-
-void Capability::revoke_info::decode(ceph::buffer::list::const_iterator& bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
-  decode(before, bl);
-  decode(seq, bl);
-  decode(last_issue, bl);
-  DECODE_FINISH(bl);
-}
 
 void Capability::revoke_info::dump(ceph::Formatter *f) const
 {

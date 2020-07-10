@@ -28,18 +28,11 @@ class JournalPointer {
   JournalPointer(int node_id_, int64_t pool_id_) : node_id(node_id_), pool_id(pool_id_) {}
   JournalPointer() {}
 
-  void encode(bufferlist &bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(front, bl);
-    encode(back, bl);
-    ENCODE_FINISH(bl);
-  }
-
-  void decode(bufferlist::const_iterator &bl) {
-    DECODE_START(1, bl);
-    decode(front, bl);
-    decode(back, bl);
-    DECODE_FINISH(bl);
+  DENC(JournalPointer, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.front, p);
+    denc(v.back, p);
+    DENC_FINISH(p);
   }
 
   int load(Objecter *objecter);
@@ -80,6 +73,6 @@ class JournalPointer {
 
   std::string get_object_id() const;
 };
-WRITE_CLASS_ENCODER(JournalPointer)
+WRITE_CLASS_DENC(JournalPointer)
 
 #endif // JOURNAL_POINTER_H

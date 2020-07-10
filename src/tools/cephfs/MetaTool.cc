@@ -413,8 +413,8 @@ int MetaTool::_show_fn(inode_meta_t& inode_meta, const string& fn)
         {
             fnode_t got_fnode;
             try {
-                auto p = hbl.cbegin();
-                ::decode(got_fnode, p);
+                auto p = hbl.begin().get_current_ptr().cbegin();
+                got_fnode.decode(p);
             } catch (const buffer::error &err) {
                 cerr << "corrupt fnode header in " << oid
                      << ": " << err.what() << std::endl;
@@ -485,7 +485,8 @@ int MetaTool::_amend_fn(const string& fn, bool confirm){
             fnode_t fnode;
             JSONDecoder::decode_json(i.c_str(), fnode, &parser, true);
             bufferlist bl;
-            fnode.encode(bl);
+            auto a = bl.get_contiguous_appender(0);
+	    fnode.encode(a);
             ret = io_meta.omap_set_header(i, bl);
             if (ret < 0)
                 return ret;
@@ -655,8 +656,8 @@ int MetaTool::list_meta(meta_op &op){
 
     fnode_t got_fnode;
     try {
-        auto p = hbl.cbegin();
-        ::decode(got_fnode, p);
+        auto p = hbl.begin().get_current_ptr().cbegin();
+	got_fnode.decode(p);
     }catch (const buffer::error &err){
         cerr << "corrupt fnode header in " << oid
              << ": " << err.what() << std::endl;

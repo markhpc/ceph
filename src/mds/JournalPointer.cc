@@ -57,7 +57,7 @@ int JournalPointer::load(Objecter *objecter)
 
   // Construct JournalPointer result, null or decoded data
   if (r == 0) {
-    auto q = data.cbegin();
+    auto q = data.begin().get_current_ptr().cbegin();
     try {
       decode(q);
     } catch (const buffer::error &e) {
@@ -83,7 +83,11 @@ int JournalPointer::save(Objecter *objecter) const
 
   // Serialize JournalPointer object
   bufferlist data;
-  encode(data);
+  size_t s = 0;
+  {
+    auto a = data.get_contiguous_appender(s);
+    encode(a);
+  }
 
   // Write to RADOS and wait for durability
   std::string const object_id = get_object_id();
@@ -112,7 +116,11 @@ void JournalPointer::save(Objecter *objecter, Context *completion) const
   ceph_assert(objecter != NULL);
 
   bufferlist data;
-  encode(data);
+  size_t s = 0;
+  {
+    auto a = data.get_contiguous_appender(s);
+    encode(a);
+  }
 
   objecter->write_full(object_t(get_object_id()), object_locator_t(pool_id),
 		       SnapContext(), data,

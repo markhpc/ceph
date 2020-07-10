@@ -726,7 +726,7 @@ int JournalTool::recover_dentries(
     } else if (r == 0) {
       // Conditionally update existing omap header
       fnode_t old_fnode;
-      auto old_fnode_iter = old_fnode_bl.cbegin();
+      auto old_fnode_iter = old_fnode_bl.begin().get_current_ptr().cbegin();
       try {
         old_fnode.decode(old_fnode_iter);
         dout(4) << "frag " << frag_oid.name << " fnode old v" <<
@@ -748,7 +748,8 @@ int JournalTool::recover_dentries(
     if ((other_pool || write_fnode) && !dry_run) {
       dout(4) << "writing fnode to omap header" << dendl;
       bufferlist fnode_bl;
-      lump.fnode.encode(fnode_bl);
+      auto a = fnode_bl.get_contiguous_appender(0);
+      lump.fnode.encode(a);
       if (!other_pool || frag.ino >= MDS_INO_SYSTEM_BASE) {
 	r = output.omap_set_header(frag_oid.name, fnode_bl);
       }

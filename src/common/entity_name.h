@@ -28,20 +28,10 @@
  */
 struct EntityName
 {
-  void encode(ceph::buffer::list& bl) const {
-    using ceph::encode;
-    encode(type, bl);
-    encode(id, bl);
+  DENC(EntityName, v, p) {
+    denc(v.type, p);
+    denc(v.id, p);
   }
-  void decode(ceph::buffer::list::const_iterator& bl) {
-    using ceph::decode;
-    uint32_t type_;
-    std::string id_;
-    decode(type_, bl);
-    decode(id_, bl);
-    set(type_, id_);
-  }
-
   const std::string& to_str() const;
   const char *to_cstr() const;
   bool from_str(std::string_view s);
@@ -85,7 +75,7 @@ private:
   std::string type_id;
 };
 
-WRITE_CLASS_ENCODER(EntityName)
+WRITE_CLASS_DENC(EntityName)
 
 WRITE_EQ_OPERATORS_2(EntityName, type, id)
 

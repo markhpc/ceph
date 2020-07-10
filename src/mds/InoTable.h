@@ -46,6 +46,7 @@ class InoTable : public MDSTable {
       interval_set<inodeno_t> *intersection);
 
   void reset_state() override;
+
   void encode_state(bufferlist& bl) const override {
     ENCODE_START(2, 2, bl);
     encode(free, bl);
@@ -65,6 +66,27 @@ class InoTable : public MDSTable {
   void decode(bufferlist::const_iterator& bl) {
     decode_state(bl);
   }
+
+/*
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+    _denc_friend(*this, p);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    _denc_friend(*this, p);
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    _denc_friend(*this, p);
+    projected_free = free;
+  }
+  template<typename T, typename P>
+  friend std::enable_if_t<std::is_same_v<InoTable, std::remove_const_t<T>>>
+  _denc_friend(T& v, P& p) {
+    DENC_START(2, 2, p);
+    denc(free, p);
+    DENC_FINISH(p);
+  }
+*/
   void dump(Formatter *f) const;
   static void generate_test_instances(std::list<InoTable*>& ls);
 

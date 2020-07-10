@@ -79,8 +79,21 @@ public:
 	   ceph_seq_t s, ceph_seq_t m, utime_t lis, unsigned st) :
       cap_id(id), wanted(w), issued(i), pending(p), client_follows(cf),
       seq(s), mseq(m), last_issue_stamp(lis), state(st) {}
-    void encode(ceph::buffer::list &bl) const;
-    void decode(ceph::buffer::list::const_iterator &p);
+    DENC(Export, v, p) {
+      DENC_START(3, 2, p);
+      denc(v.cap_id, p);
+      denc(v.wanted, p);
+      denc(v.issued, p);
+      denc(v.pending, p);
+      denc(v.client_follows, p);
+      denc(v.seq, p);
+      denc(v.mseq, p);
+      denc(v.last_issue_stamp, p);
+      if (struct_v >= 3) {
+        denc(v.state, p);
+      }
+      DENC_FINISH(p);
+    }
     void dump(ceph::Formatter *f) const;
     static void generate_test_instances(std::list<Export*>& ls);
 
@@ -97,8 +110,13 @@ public:
   struct Import {
     Import() {}
     Import(int64_t i, ceph_seq_t s, ceph_seq_t m) : cap_id(i), issue_seq(s), mseq(m) {}
-    void encode(ceph::buffer::list &bl) const;
-    void decode(ceph::buffer::list::const_iterator &p);
+    DENC(Import, v, p) {
+      DENC_START(1, 1, p);
+      denc(v.cap_id, p);
+      denc(v.issue_seq, p);
+      denc(v.mseq, p);
+      DENC_FINISH(p);
+    }
     void dump(ceph::Formatter *f) const;
 
     int64_t cap_id = 0;
@@ -108,8 +126,13 @@ public:
   struct revoke_info {
     revoke_info() {}
     revoke_info(__u32 b, ceph_seq_t s, ceph_seq_t li) : before(b), seq(s), last_issue(li) {}
-    void encode(ceph::buffer::list& bl) const;
-    void decode(ceph::buffer::list::const_iterator& bl);
+    DENC(revoke_info, v, p) {
+      DENC_START(2, 2, p);
+      denc(v.before, p);
+      denc(v.seq, p);
+      denc(v.last_issue, p);
+      DENC_FINISH(p);
+    }
     void dump(ceph::Formatter *f) const;
     static void generate_test_instances(std::list<revoke_info*>& ls);
 
@@ -410,9 +433,9 @@ private:
   int lock_cache_allowed = 0;
 };
 
-WRITE_CLASS_ENCODER(Capability::Export)
-WRITE_CLASS_ENCODER(Capability::Import)
-WRITE_CLASS_ENCODER(Capability::revoke_info)
+WRITE_CLASS_DENC(Capability::Export)
+WRITE_CLASS_DENC(Capability::Import)
+WRITE_CLASS_DENC(Capability::revoke_info)
 WRITE_CLASS_ENCODER(Capability)
 
 

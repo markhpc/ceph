@@ -187,8 +187,17 @@ struct frag_info_t : public scatter_info_t {
 	nsubdirs == o.nsubdirs;
   }
 
-  void encode(ceph::buffer::list &bl) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
+  DENC(frag_info_t, v, p) {
+    DENC_START(3, 2, p);
+    denc(v.version, p);
+    denc(v.mtime, p);
+    denc(v.nfiles, p);
+    denc(v.nsubdirs, p);
+    if (struct_v >= 3) {
+      denc(v.change_attr, p);
+    }
+    DENC_FINISH(p);
+  }
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
   static void generate_test_instances(std::list<frag_info_t*>& ls);
@@ -199,7 +208,7 @@ struct frag_info_t : public scatter_info_t {
   int64_t nfiles = 0;        // files
   int64_t nsubdirs = 0;      // subdirs
 };
-WRITE_CLASS_ENCODER(frag_info_t)
+WRITE_CLASS_DENC(frag_info_t)
 
 inline bool operator==(const frag_info_t &l, const frag_info_t &r) {
   return memcmp(&l, &r, sizeof(l)) == 0;
@@ -248,8 +257,20 @@ struct nest_info_t : public scatter_info_t {
         rsnaps == o.rsnaps;
   }
 
-  void encode(ceph::buffer::list &bl) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
+  DENC(nest_info_t, v, p) {
+    DENC_START(3, 2, p);
+    denc(v.version, p);
+    denc(v.rbytes, p);
+    denc(v.rfiles, p);
+    denc(v.rsubdirs, p);
+    {
+      int64_t ranchors;
+      denc(ranchors, p);
+    }
+    denc(v.rsnaps, p);
+    denc(v.rctime, p);
+    DENC_FINISH(p);
+  }
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
   static void generate_test_instances(std::list<nest_info_t*>& ls);
@@ -261,7 +282,7 @@ struct nest_info_t : public scatter_info_t {
   int64_t rsubdirs = 0;
   int64_t rsnaps = 0;
 };
-WRITE_CLASS_ENCODER(nest_info_t)
+WRITE_CLASS_DENC(nest_info_t)
 
 inline bool operator==(const nest_info_t &l, const nest_info_t &r) {
   return memcmp(&l, &r, sizeof(l)) == 0;
@@ -275,22 +296,14 @@ std::ostream& operator<<(std::ostream &out, const nest_info_t &n);
 struct vinodeno_t {
   vinodeno_t() {}
   vinodeno_t(inodeno_t i, snapid_t s) : ino(i), snapid(s) {}
-
-  void encode(ceph::buffer::list& bl) const {
-    using ceph::encode;
-    encode(ino, bl);
-    encode(snapid, bl);
+  DENC(vinodeno_t, v, p) {
+    denc(v.ino, p);
+    denc(v.snapid, p);
   }
-  void decode(ceph::buffer::list::const_iterator& p) {
-    using ceph::decode;
-    decode(ino, p);
-    decode(snapid, p);
-  }
-
   inodeno_t ino;
   snapid_t snapid;
 };
-WRITE_CLASS_ENCODER(vinodeno_t)
+WRITE_CLASS_DENC(vinodeno_t)
 
 inline bool operator==(const vinodeno_t &l, const vinodeno_t &r) {
   return l.ino == r.ino && l.snapid == r.snapid;
@@ -306,17 +319,11 @@ inline bool operator<(const vinodeno_t &l, const vinodeno_t &r) {
 
 struct quota_info_t
 {
-  void encode(ceph::buffer::list& bl) const {
-    ENCODE_START(1, 1, bl);
-    encode(max_bytes, bl);
-    encode(max_files, bl);
-    ENCODE_FINISH(bl);
-  }
-  void decode(ceph::buffer::list::const_iterator& p) {
-    DECODE_START_LEGACY_COMPAT_LEN(1, 1, 1, p);
-    decode(max_bytes, p);
-    decode(max_files, p);
-    DECODE_FINISH(p);
+  DENC(quota_info_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.max_bytes, p);
+    denc(v.max_files, p);
+    DENC_FINISH(p);
   }
 
   void dump(ceph::Formatter *f) const;
@@ -333,7 +340,7 @@ struct quota_info_t
   int64_t max_bytes = 0;
   int64_t max_files = 0;
 };
-WRITE_CLASS_ENCODER(quota_info_t)
+WRITE_CLASS_DENC(quota_info_t)
 
 inline bool operator==(const quota_info_t &l, const quota_info_t &r) {
   return memcmp(&l, &r, sizeof(l)) == 0;
@@ -366,9 +373,14 @@ struct client_writeable_range_t {
     byte_range_t() {}
     void decode_json(JSONObj *obj);
   };
+  DENC(client_writeable_range_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.range.first, p);
+    denc(v.range.last, p);
+    denc(v.follows, p);
+    DENC_FINISH(p);
+  }
 
-  void encode(ceph::buffer::list &bl) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<client_writeable_range_t*>& ls);
 
@@ -382,7 +394,7 @@ inline void decode(client_writeable_range_t::byte_range_t& range, ceph::buffer::
   decode(range.last, bl);
 }
 
-WRITE_CLASS_ENCODER(client_writeable_range_t)
+WRITE_CLASS_DENC(client_writeable_range_t)
 
 std::ostream& operator<<(std::ostream& out, const client_writeable_range_t& r);
 
@@ -426,15 +438,33 @@ public:
   bool operator!=(const inline_data_t& o) const {
     return !(*this == o);
   }
-  void encode(ceph::buffer::list &bl) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
-
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    denc(version, p);
+    if (blp) {
+      denc(*blp, p);
+    } else {
+      denc(bufferlist(), p);
+    }
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    denc(version, p);
+    uint32_t inline_len;
+    denc(inline_len, p);
+    if (inline_len > 0) {
+      denc_traits<ceph::buffer::list>::decode_nohead(inline_len, get_data(), p);
+    } else {
+      free_data();
+    }
+  }
   version_t version = 1;
 
 private:
   std::unique_ptr<ceph::buffer::list> blp;
 };
-WRITE_CLASS_ENCODER(inline_data_t)
+WRITE_CLASS_DENC(inline_data_t)
 
 enum {
   DAMAGE_STATS,     // statistics (dirstat, size, etc)
@@ -1087,8 +1117,26 @@ inline void decode(old_inode_t<Allocator> &c, ::ceph::buffer::list::const_iterat
  * like an inode, but for a dir frag 
  */
 struct fnode_t {
-  void encode(ceph::buffer::list &bl) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
+  DENC(fnode_t, v, p) {
+    DENC_START(4, 3, p);
+    denc(v.version, p);
+    denc(v.snap_purged_thru, p);
+    denc(v.fragstat, p);
+    denc(v.accounted_fragstat, p);
+    denc(v.rstat, p);
+    denc(v.accounted_rstat, p);
+    if (struct_v >= 3) {
+      denc(v.damage_flags, p);
+    }
+    if (struct_v >= 4) {
+      denc(v.recursive_scrub_version, p);
+      denc(v.recursive_scrub_stamp, p);
+      denc(v.localized_scrub_version, p);
+      denc(v.localized_scrub_stamp, p);
+    }
+    DENC_FINISH(p);
+  }
+
   void dump(ceph::Formatter *f) const;
   void decode_json(JSONObj *obj);
   static void generate_test_instances(std::list<fnode_t*>& ls);
@@ -1106,19 +1154,24 @@ struct fnode_t {
   version_t localized_scrub_version = 0;
   utime_t localized_scrub_stamp;
 };
-WRITE_CLASS_ENCODER(fnode_t)
+WRITE_CLASS_DENC(fnode_t)
 
 
 struct old_rstat_t {
-  void encode(ceph::buffer::list& bl) const;
-  void decode(ceph::buffer::list::const_iterator& p);
+  DENC(old_rstat_t, v, p) {
+    DENC_START(2, 2, p);
+    denc(v.first, p);
+    denc(v.rstat, p);
+    denc(v.accounted_rstat, p);
+    DENC_FINISH(p);
+  }
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<old_rstat_t*>& ls);
 
   snapid_t first;
   nest_info_t rstat, accounted_rstat;
 };
-WRITE_CLASS_ENCODER(old_rstat_t)
+WRITE_CLASS_DENC(old_rstat_t)
 
 inline std::ostream& operator<<(std::ostream& out, const old_rstat_t& o) {
   return out << "old_rstat(first " << o.first << " " << o.rstat << " " << o.accounted_rstat << ")";
@@ -1158,14 +1211,35 @@ public:
   void clear() {
     _vec.clear();
   }
-  void encode(ceph::buffer::list& bl) const;
-  void decode(ceph::buffer::list::const_iterator &p);
+  void bound_encode(size_t& p) const {
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    uint32_t len = _vec.size() * sizeof(block_type);
+    denc(len, p);
+    denc_traits<std::vector<block_type>>::encode_nohead(_vec, p);
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    uint32_t len;
+    denc(len, p);
+
+    _vec.clear();
+    if (len >= sizeof(block_type)) {
+      denc_traits<std::vector<block_type>>::decode_nohead(len / sizeof(block_type), _vec, p);
+    }
+    uint32_t rem = len % sizeof(block_type);
+    if (rem) {
+      ceph_le64 buf{};
+      memcpy((char*)&buf, p.get_pos_add(rem),rem);
+      _vec.push_back((block_type)buf);
+    }
+  }
+
   void dump(ceph::Formatter *f) const;
   void print(std::ostream& out) const;
 private:
   std::vector<block_type> _vec;
 };
-WRITE_CLASS_ENCODER(feature_bitset_t)
+WRITE_CLASS_DENC(feature_bitset_t)
 
 inline std::ostream& operator<<(std::ostream& out, const feature_bitset_t& s) {
   s.print(out);
@@ -1200,15 +1274,19 @@ struct metric_spec_t {
     metric_flags.clear();
   }
 
-  void encode(ceph::buffer::list& bl) const;
-  void decode(ceph::buffer::list::const_iterator& p);
+  DENC(metric_spec_t, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.metric_flags, p);
+    DENC_FINISH(p);
+  }
+
   void dump(ceph::Formatter *f) const;
   void print(std::ostream& out) const;
 
   // set of metrics that a client is capable of forwarding
   feature_bitset_t metric_flags;
 };
-WRITE_CLASS_ENCODER(metric_spec_t)
+WRITE_CLASS_DENC(metric_spec_t)
 
 inline std::ostream& operator<<(std::ostream& out, const metric_spec_t& mst) {
   mst.print(out);
@@ -1251,15 +1329,21 @@ struct client_metadata_t {
     metric_spec.clear();
   }
 
-  void encode(ceph::buffer::list& bl) const;
-  void decode(ceph::buffer::list::const_iterator& p);
+  DENC(client_metadata_t, v, p) {
+    DENC_START(3, 1, p);
+    denc(v.kv_map, p);
+    denc(v.features, p);
+    denc(v.metric_spec, p);
+    DENC_FINISH(p);
+  }
+
   void dump(ceph::Formatter *f) const;
 
   kv_map_t kv_map;
   feature_bitset_t features;
   metric_spec_t metric_spec;
 };
-WRITE_CLASS_ENCODER(client_metadata_t)
+WRITE_CLASS_DENC(client_metadata_t)
 
 /*
  * session_info_t - durable part of a Session
@@ -1277,8 +1361,61 @@ struct session_info_t {
     client_metadata.clear();
   }
 
-  void encode(ceph::buffer::list& bl, uint64_t features) const;
-  void decode(ceph::buffer::list::const_iterator& p);
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+    _denc_friend(*this, p);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    DENC_DUMP_PRE(Type);
+    _denc_friend(*this, p);
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    _denc_friend(*this, p);
+/*    DENC_START(7, 7, p);
+    denc(inst, p);
+    if (struct_v <= 2) {
+      set<ceph_tid_t> s;
+      denc(s, p);
+      while (!s.empty()) {
+        completed_requests[*s.begin()] = inodeno_t();
+        s.erase(s.begin());
+      }
+    } else {
+      denc(completed_requests, p);
+    }
+    denc(prealloc_inos, p);
+    denc(used_inos, p);
+    prealloc_inos.insert(used_inos);
+    used_inos.clear();
+    if (struct_v >= 4 && struct_v < 7) {
+      denc(client_metadata.kv_map, p);
+    }
+    if (struct_v >= 5) {
+      denc(completed_flushes, p);
+    }
+    if (struct_v >= 6) {
+      denc(auth_name, p);
+    }
+    if (struct_v >= 7) {
+      denc(client_metadata, p);
+    }
+    DENC_FINISH(p)
+*/
+  }
+  template<typename T, typename P>
+  friend std::enable_if_t<std::is_same_v<session_info_t, std::remove_const_t<T>>>
+  _denc_friend(T& v, P& p) {
+    DENC_START(7, 7, p);
+    denc(v.inst, p);
+    denc(v.completed_requests, p);
+    denc(v.prealloc_inos, p);   // hacky, see below.
+    denc(v.used_inos, p);
+    denc(v.completed_flushes, p);
+    denc(v.auth_name, p);
+    denc(v.client_metadata, p);
+    DENC_FINISH(p);
+  }
+
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<session_info_t*>& ls);
 
@@ -1290,7 +1427,7 @@ struct session_info_t {
   std::set<ceph_tid_t> completed_flushes;
   EntityName auth_name;
 };
-WRITE_CLASS_ENCODER_FEATURES(session_info_t)
+WRITE_CLASS_DENC(session_info_t)
 
 // dentries
 struct dentry_key_t {

@@ -5302,10 +5302,75 @@ public:
 
   void encode(ceph::buffer::list &bl) const;
   void decode(ceph::buffer::list::const_iterator &bl);
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+    _denc_friend(*this, p);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    _denc_friend(*this, p);
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    DENC_START(9, 5, p);
+    if (struct_v < 3) {
+      string magic;
+      denc(magic, p);
+    }
+    denc(cluster_fsid, p);
+    denc(whoami, p);
+    denc(current_epoch, p);
+    denc(oldest_map, p);
+    denc(newest_map, p);
+    denc(weight, p);
+    if (struct_v >= 2) {
+      compat_features.decode(p);
+    } else { //upgrade it!
+      compat_features.incompat.insert(CEPH_OSD_FEATURE_INCOMPAT_BASE);
+    }
+    denc(clean_thru, p);
+    denc(mounted, p);
+    if (struct_v >= 4)
+      denc(osd_fsid, p);
+    if (struct_v >= 6) {
+      epoch_t last_map_marked_full;
+      denc(last_map_marked_full, p);
+    }
+    if (struct_v >= 7) {
+      map<int64_t,epoch_t> pool_last_map_marked_full;
+      denc(pool_last_map_marked_full, p);
+    }
+    if (struct_v >= 9) {
+      denc(purged_snaps_last, p);
+      denc(last_purged_snaps_scrub, p);
+    } else {
+      purged_snaps_last = 0;
+    }
+    DENC_FINISH(p);
+  }
+  template<typename T, typename P>
+  friend std::enable_if_t<std::is_same_v<OSDSuperblock, std::remove_const_t<T>>>
+  _denc_friend(T& v, P& p) {
+    DENC_START(9, 5, p);
+    denc(v.cluster_fsid, p);
+    denc(v.whoami, p);
+    denc(v.current_epoch, p);
+    denc(v.oldest_map, p);
+    denc(v.newest_map, p);
+    denc(v.weight, p);
+    v.compat_features.encode(p);
+    denc(v.clean_thru, p);
+    denc(v.mounted, p);
+    denc(v.osd_fsid, p);
+    denc((v.epoch_t)0, p);  // epoch_t last_epoch_marked_full
+    denc((uint32_t)0, p);  // map<int64_t,epoch_t> pool_last_epoch_marked_full
+    denc(v.purged_snaps_last, p);
+    denc(v.last_purged_snaps_scrub, p);
+    DENC_FINISH(p);
+  }
+
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<OSDSuperblock*>& o);
 };
-WRITE_CLASS_ENCODER(OSDSuperblock)
+WRITE_CLASS_DENC(OSDSuperblock)
 
 inline std::ostream& operator<<(std::ostream& out, const OSDSuperblock& sb)
 {

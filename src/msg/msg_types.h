@@ -175,6 +175,72 @@ WRITE_CLASS_ENCODER(ceph_sockaddr_storage)
 /*
  * encode sockaddr.ss_family as network byte order
  */
+
+template<>
+struct denc_traits<sockaddr_storage> {
+  static constexpr bool supported = true;
+  static constexpr bool bounded = false;
+  static constexpr bool featured = false;
+  static constexpr bool need_contiguous = true;
+  static void bound_encode(const sockaddr_storage& a, size_t& p, uint64_t f=0) {
+  //FIXME: better estimate?
+#if defined(__linux__)
+    p += sizeof(sockaddr_storage);
+#else
+    p += sizeof(ceph_sockaddr_storage);
+#endif
+  }
+  static void encode(const sockaddr_storage& a, ceph::buffer::list::contiguous_appender& p, uint64_t f=0) {
+#if defined(__linux__)
+    struct sockaddr_storage ss = a;
+    ss.ss_family = htons(ss.ss_family);
+    p.append((char*)&ss, sizeof(ss));
+#elif defined(__FreeBSD__) || defined(__APPLE__)
+    ceph_sockaddr_storage ss{};
+    auto src = (unsigned char const *)&a;
+    auto dst = (unsigned char *)&ss;
+    src += sizeof(a.ss_len);
+    ss.ss_family = a.ss_family;
+    src += sizeof(a.ss_family);
+    dst += sizeof(ss.ss_family);
+    const auto copy_size = std::min((unsigned char*)(&a + 1) - src,
+                                  (unsigned char*)(&ss + 1) - dst);
+    ::memcpy(dst, src, copy_size);
+    denc(ss, p);
+#else
+    ceph_sockaddr_storage ss{};
+    ::memset(&ss, '\0', sizeof(ss));
+    ::memcpy(&wireaddr, &ss, std::min(sizeof(ss), sizeof(a)));
+    denc(ss, p);
+#endif
+  }
+  static void decode(sockaddr_storage& a, ceph::buffer::ptr::const_iterator &p, uint64_t f=0) {
+#if defined(__linux__)
+    size_t size = sizeof(a);
+    ::memcpy(&a, p.get_pos_add(size), size);
+    a.ss_family = ntohs(a.ss_family);
+#elif defined(__FreeBSD__) || defined(__APPLE__)
+    ceph_sockaddr_storage ss{};
+    denc(ss, p);
+    auto src = (unsigned char const *)&ss;
+    auto dst = (unsigned char *)&a;
+    a.ss_len = 0;
+    dst += sizeof(a.ss_len);
+    a.ss_family = ss.ss_family;
+    src += sizeof(ss.ss_family);
+    dst += sizeof(a.ss_family);
+    auto const copy_size = std::min((unsigned char*)(&ss + 1) - src,
+                                    (unsigned char*)(&a + 1) - dst);
+    ::memcpy(dst, src, copy_size);
+#else
+    ceph_sockaddr_storage ss{};
+    denc(ss, p);
+    ::memcpy(&a, &ss, std::min(sizeof(ss), sizeof(a)));
+#endif
+
+  }
+};
+/*
 static inline void encode(const sockaddr_storage& a, ceph::buffer::list& bl) {
 #if defined(__linux__)
   struct sockaddr_storage ss = a;
@@ -223,6 +289,7 @@ static inline void decode(sockaddr_storage& a,
   ::memcpy(&a, &ss, std::min(sizeof(ss), sizeof(a)));
 #endif
 }
+*/
 
 /*
  * an entity's network address.
@@ -442,16 +509,73 @@ struct entity_addr_t {
 
   bool parse(const char *s, const char **end = 0, int type=0);
 
-  void decode_legacy_addr_after_marker(ceph::buffer::list::const_iterator& bl)
+  DENC_HELPERS;
+  void bound_encode(size_t& p, uint64_t f) const {
+    _denc_friend(*this, p, f);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p, uint64_t f) const {
+    DENC_DUMP_PRE(Type);
+    _denc_friend(*this, p, f);
+  }
+
+  static void encode_sa_data(const entity_addr_t& v, size_t p, __u32 elen) {
+    p += elen;
+  }
+  static void encode_sa_data(const entity_addr_t& v, ceph::buffer::list::contiguous_appender& p, __u32 elen) {
+    p.append(v.u.sa.sa_data, elen);
+  }
+
+  // Right now, these only deal with sockaddr_storage that have only family and content.
+  // Apparently on BSD there is also an ss_len that we need to handle; this requires
+  // broader study
+  template<typename T, typename P>
+  friend std::enable_if_t<std::is_same_v<entity_addr_t, std::remove_const_t<T>>>
+  _denc_friend(T& v, P& p, uint64_t f) {
+    if ((f & CEPH_FEATURE_MSG_ADDR2) == 0) {
+      denc((__u32)0, p);
+      denc(v.nonce, p);
+      sockaddr_storage ss = v.get_sockaddr_storage();
+      denc(ss, p);
+    }
+    denc((__u8)1, p);
+    DENC_START(1, 1, p);
+    if (HAVE_FEATURE(f, SERVER_NAUTILUS)) {
+      denc(v.type, p);
+    } else {
+      // map any -> legacy for old clients.  this is primary for the benefit
+      // of OSDMap's blacklist, but is reasonable in general since any: is
+      // meaningless for pre-nautilus clients or daemons.
+      auto t = v.type;
+      if (t == TYPE_ANY) {
+        t = TYPE_LEGACY;
+      }
+      denc(t, p);
+    }
+    denc(v.nonce, p);
+    __u32 elen = v.get_sockaddr_len();
+#if (__FreeBSD__) || defined(__APPLE__)
+      elen -= sizeof(v.u.sa.sa_len);
+#endif
+    denc(elen, p);
+    if (elen) {
+      uint16_t ss_family = v.u.sa.sa_family;
+
+      denc(ss_family, p);
+      elen -= sizeof(v.u.sa.sa_family);
+      encode_sa_data(v, p, elen);
+    }
+    DENC_FINISH(p);
+  }
+
+  void decode_legacy_addr_after_marker(ceph::buffer::ptr::const_iterator& p)
   {
-    using ceph::decode;
     __u8 marker;
     __u16 rest;
-    decode(marker, bl);
-    decode(rest, bl);
-    decode(nonce, bl);
+    denc(marker, p);
+    denc(rest, p);
+    denc(nonce, p);
     sockaddr_storage ss;
-    decode(ss, bl);
+    denc(ss, p);
     set_sockaddr((sockaddr*)&ss);
     if (get_family() == AF_UNSPEC) {
       type = TYPE_NONE;
@@ -459,64 +583,20 @@ struct entity_addr_t {
       type = TYPE_LEGACY;
     }
   }
-
-  // Right now, these only deal with sockaddr_storage that have only family and content.
-  // Apparently on BSD there is also an ss_len that we need to handle; this requires
-  // broader study
-
-  void encode(ceph::buffer::list& bl, uint64_t features) const {
-    using ceph::encode;
-    if ((features & CEPH_FEATURE_MSG_ADDR2) == 0) {
-      encode((__u32)0, bl);
-      encode(nonce, bl);
-      sockaddr_storage ss = get_sockaddr_storage();
-      encode(ss, bl);
-      return;
-    }
-    encode((__u8)1, bl);
-    ENCODE_START(1, 1, bl);
-    if (HAVE_FEATURE(features, SERVER_NAUTILUS)) {
-      encode(type, bl);
-    } else {
-      // map any -> legacy for old clients.  this is primary for the benefit
-      // of OSDMap's blacklist, but is reasonable in general since any: is
-      // meaningless for pre-nautilus clients or daemons.
-      auto t = type;
-      if (t == TYPE_ANY) {
-	t = TYPE_LEGACY;
-      }
-      encode(t, bl);
-    }
-    encode(nonce, bl);
-    __u32 elen = get_sockaddr_len();
-#if (__FreeBSD__) || defined(__APPLE__)
-      elen -= sizeof(u.sa.sa_len);
-#endif
-    encode(elen, bl);
-    if (elen) {
-      uint16_t ss_family = u.sa.sa_family;
-
-      encode(ss_family, bl);
-      elen -= sizeof(u.sa.sa_family);
-      bl.append(u.sa.sa_data, elen);
-    }
-    ENCODE_FINISH(bl);
-  }
-  void decode(ceph::buffer::list::const_iterator& bl) {
-    using ceph::decode;
+  void decode(ceph::buffer::ptr::const_iterator& p, uint64_t f) {
     __u8 marker;
-    decode(marker, bl);
+    denc(marker, p);
     if (marker == 0) {
-      decode_legacy_addr_after_marker(bl);
+      decode_legacy_addr_after_marker(p);
       return;
     }
     if (marker != 1)
       throw ceph::buffer::malformed_input("entity_addr_t marker != 1");
-    DECODE_START(1, bl);
-    decode(type, bl);
-    decode(nonce, bl);
+    DENC_START(1, 1, p);
+    denc(type, p);
+    denc(nonce, p);
     __u32 elen;
-    decode(elen, bl);
+    denc(elen, p);
     if (elen) {
 #if defined(__FreeBSD__) || defined(__APPLE__)
       u.sa.sa_len = 0;
@@ -525,22 +605,22 @@ struct entity_addr_t {
       if (elen < sizeof(ss_family)) {
 	throw ceph::buffer::malformed_input("elen smaller than family len");
       }
-      decode(ss_family, bl);
+      denc(ss_family, p);
       u.sa.sa_family = ss_family;
       elen -= sizeof(ss_family);
       if (elen > get_sockaddr_len() - sizeof(u.sa.sa_family)) {
 	throw ceph::buffer::malformed_input("elen exceeds sockaddr len");
       }
-      bl.copy(elen, u.sa.sa_data);
+      memcpy(u.sa.sa_data, p.get_pos_add(elen), elen);
     }
-    DECODE_FINISH(bl);
+    DENC_FINISH(p);
   }
 
   void dump(ceph::Formatter *f) const;
 
   static void generate_test_instances(std::list<entity_addr_t*>& o);
 };
-WRITE_CLASS_ENCODER_FEATURES(entity_addr_t)
+WRITE_CLASS_DENC_FEATURED(entity_addr_t)
 
 std::ostream& operator<<(std::ostream& out, const entity_addr_t &addr);
 
@@ -644,8 +724,56 @@ struct entity_addrvec_t {
     return r;
   }
 
-  void encode(ceph::buffer::list& bl, uint64_t features) const;
-  void decode(ceph::buffer::list::const_iterator& bl);
+  DENC_HELPERS;
+  void bound_encode(size_t& p, uint64_t f) const {
+    _denc_friend(*this, p, f);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p, uint64_t f) const {
+    DENC_DUMP_PRE(Type);
+    _denc_friend(*this, p, f);
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p, uint64_t f=0) {
+    __u8 marker;
+    denc(marker, p);
+    if (marker == 0) {
+      // legacy!
+      entity_addr_t addr;
+      addr.decode_legacy_addr_after_marker(p);
+      v.clear();
+      v.push_back(addr);
+      return;
+    }
+    if (marker == 1) {
+      entity_addr_t addr;
+      DENC_START(1, 1, p);
+      denc(addr.type, p);
+      denc(addr.nonce, p);
+      __u32 elen;
+      denc(elen, p);
+      if (elen) {
+        memcpy((char*)addr.get_sockaddr(), p.get_pos_add(elen), elen);
+      }
+      DENC_FINISH(p);
+      v.clear();
+      v.push_back(addr);
+      return;
+    }
+    if (marker > 2)
+      throw ceph::buffer::malformed_input("entity_addrvec_marker > 2");
+    denc(v, p);
+  }
+  template<typename T, typename P>
+  friend std::enable_if_t<std::is_same_v<entity_addrvec_t, std::remove_const_t<T>>>
+  _denc_friend(T& v, P& p, uint64_t f) {
+    if ((f & CEPH_FEATURE_MSG_ADDR2) == 0) {
+      // encode a single legacy entity_addr_t for unfeatured peers
+      denc(v.legacy_addr(), p, 0);
+      return;
+    }
+    denc((__u8)2, p);
+    denc(v.v, p, f);
+  }
+
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<entity_addrvec_t*>& ls);
 
@@ -711,7 +839,7 @@ struct entity_addrvec_t {
     return l.v < r.v;  // see lexicographical_compare()
   }
 };
-WRITE_CLASS_ENCODER_FEATURES(entity_addrvec_t);
+WRITE_CLASS_DENC_FEATURED(entity_addrvec_t);
 
 namespace std {
 template<> struct hash<entity_addrvec_t> {
@@ -741,22 +869,15 @@ struct entity_inst_t {
     ceph_entity_inst i = {name, addr};
     return i;
   }
-
-  void encode(ceph::buffer::list& bl, uint64_t features) const {
-    using ceph::encode;
-    encode(name, bl);
-    encode(addr, bl, features);
+  DENC_FEATURED(entity_inst_t, v, p, f) {
+    denc(v.name, p);
+    denc(v.addr, p);
   }
-  void decode(ceph::buffer::list::const_iterator& bl) {
-    using ceph::decode;
-    decode(name, bl);
-    decode(addr, bl);
-  }
-
+  
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<entity_inst_t*>& o);
 };
-WRITE_CLASS_ENCODER_FEATURES(entity_inst_t)
+WRITE_CLASS_DENC_FEATURED(entity_inst_t)
 
 
 inline bool operator==(const entity_inst_t& a, const entity_inst_t& b) {

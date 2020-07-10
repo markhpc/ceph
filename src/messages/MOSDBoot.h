@@ -66,27 +66,28 @@ public:
   void encode_payload(uint64_t features) override {
     header.version = HEAD_VERSION;
     header.compat_version = COMPAT_VERSION;
-    using ceph::encode;
+    //FIXME: Better size estimate
+    auto a = payload.get_contiguous_appender(0);
     paxos_encode();
     if (!HAVE_FEATURE(features, SERVER_NAUTILUS)) {
       header.version = 6;
       header.compat_version = 6;
-      encode(sb, payload);
-      hb_back_addrs.legacy_addr().encode(payload, features);
-      cluster_addrs.legacy_addr().encode(payload, features);
-      encode(boot_epoch, payload);
-      hb_front_addrs.legacy_addr().encode(payload, features);
-      encode(metadata, payload);
-      encode(osd_features, payload);
+      denc(sb, a);
+      hb_back_addrs.legacy_addr().encode(a, features);
+      cluster_addrs.legacy_addr().encode(a, features);
+      denc(boot_epoch, a);
+      hb_front_addrs.legacy_addr().encode(a, features);
+      denc(metadata, a);
+      denc(osd_features, a);
       return;
     }
-    encode(sb, payload);
-    encode(hb_back_addrs, payload, features);
-    encode(cluster_addrs, payload, features);
-    encode(boot_epoch, payload);
-    encode(hb_front_addrs, payload, features);
-    encode(metadata, payload);
-    encode(osd_features, payload);
+    denc(sb, a);
+    denc(hb_back_addrs, a, features);
+    denc(cluster_addrs, a, features);
+    denc(boot_epoch, a);
+    denc(hb_front_addrs, a, features);
+    denc(metadata, a);
+    denc(osd_features, a);
   }
   void decode_payload() override {
     auto p = payload.cbegin();

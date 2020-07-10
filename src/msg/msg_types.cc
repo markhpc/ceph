@@ -276,51 +276,6 @@ bool entity_addrvec_t::parse(const char *s, const char **end)
   return !v.empty();
 }
 
-void entity_addrvec_t::encode(ceph::buffer::list& bl, uint64_t features) const
-{
-  using ceph::encode;
-  if ((features & CEPH_FEATURE_MSG_ADDR2) == 0) {
-    // encode a single legacy entity_addr_t for unfeatured peers
-    encode(legacy_addr(), bl, 0);
-    return;
-  }
-  encode((__u8)2, bl);
-  encode(v, bl, features);
-}
-
-void entity_addrvec_t::decode(ceph::buffer::list::const_iterator& bl)
-{
-  using ceph::decode;
-  __u8 marker;
-  decode(marker, bl);
-  if (marker == 0) {
-    // legacy!
-    entity_addr_t addr;
-    addr.decode_legacy_addr_after_marker(bl);
-    v.clear();
-    v.push_back(addr);
-    return;
-  }
-  if (marker == 1) {
-    entity_addr_t addr;
-    DECODE_START(1, bl);
-    decode(addr.type, bl);
-    decode(addr.nonce, bl);
-    __u32 elen;
-    decode(elen, bl);
-    if (elen) {
-      bl.copy(elen, (char*)addr.get_sockaddr());
-    }
-    DECODE_FINISH(bl);
-    v.clear();
-    v.push_back(addr);
-    return;
-  }
-  if (marker > 2)
-    throw ceph::buffer::malformed_input("entity_addrvec_marker > 2");
-  decode(v, bl);
-}
-
 void entity_addrvec_t::dump(ceph::Formatter *f) const
 {
   f->open_array_section("addrvec");

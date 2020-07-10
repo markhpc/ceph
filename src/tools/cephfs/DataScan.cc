@@ -1428,7 +1428,7 @@ int MetadataTool::read_fnode(
     return r;
   }
 
-  auto old_fnode_iter = fnode_bl.cbegin();
+  auto old_fnode_iter = fnode_bl.begin().get_current_ptr().cbegin();
   try {
     (*fnode).decode(old_fnode_iter);
   } catch (const buffer::error &err) {
@@ -1884,13 +1884,14 @@ int MetadataDriver::find_or_create_dirfrag(
 
     // Missing or corrupt fnode, create afresh
     bufferlist fnode_bl;
+    auto a = fnode_bl.get_contiguous_appender(0);
     fnode_t blank_fnode;
     blank_fnode.version = 1;
     // mark it as non-empty
     blank_fnode.fragstat.nfiles = 1;
     blank_fnode.accounted_fragstat = blank_fnode.fragstat;
     blank_fnode.damage_flags |= (DAMAGE_STATS | DAMAGE_RSTATS);
-    blank_fnode.encode(fnode_bl);
+    blank_fnode.encode(a);
 
 
     librados::ObjectWriteOperation op;

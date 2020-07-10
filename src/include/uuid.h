@@ -66,10 +66,22 @@ struct uuid_d {
     ceph::decode_raw(uuid, p);
   }
 
+  DENC_HELPERS;
+  void bound_encode(size_t& p) const {
+    p += sizeof(uuid);
+  }
+  void encode(ceph::buffer::list::contiguous_appender& p) const {
+    p.append((char*)&uuid, sizeof(uuid));
+  }
+  void decode(ceph::buffer::ptr::const_iterator& p) {
+    size_t size = sizeof(uuid);
+    memcpy(&uuid, p.get_pos_add(size), size);
+  }
+
   void dump(ceph::Formatter *f) const;
   static void generate_test_instances(std::list<uuid_d*>& o);
 };
-WRITE_CLASS_ENCODER(uuid_d)
+WRITE_CLASS_DENC(uuid_d)
 
 inline std::ostream& operator<<(std::ostream& out, const uuid_d& u) {
   char b[37];

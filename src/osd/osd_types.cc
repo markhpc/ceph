@@ -5474,65 +5474,6 @@ void pg_hit_set_history_t::generate_test_instances(list<pg_hit_set_history_t*>& 
 
 // -- OSDSuperblock --
 
-void OSDSuperblock::encode(ceph::buffer::list &bl) const
-{
-  ENCODE_START(9, 5, bl);
-  encode(cluster_fsid, bl);
-  encode(whoami, bl);
-  encode(current_epoch, bl);
-  encode(oldest_map, bl);
-  encode(newest_map, bl);
-  encode(weight, bl);
-  compat_features.encode(bl);
-  encode(clean_thru, bl);
-  encode(mounted, bl);
-  encode(osd_fsid, bl);
-  encode((epoch_t)0, bl);  // epoch_t last_epoch_marked_full
-  encode((uint32_t)0, bl);  // map<int64_t,epoch_t> pool_last_epoch_marked_full
-  encode(purged_snaps_last, bl);
-  encode(last_purged_snaps_scrub, bl);
-  ENCODE_FINISH(bl);
-}
-
-void OSDSuperblock::decode(ceph::buffer::list::const_iterator &bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(9, 5, 5, bl);
-  if (struct_v < 3) {
-    string magic;
-    decode(magic, bl);
-  }
-  decode(cluster_fsid, bl);
-  decode(whoami, bl);
-  decode(current_epoch, bl);
-  decode(oldest_map, bl);
-  decode(newest_map, bl);
-  decode(weight, bl);
-  if (struct_v >= 2) {
-    compat_features.decode(bl);
-  } else { //upgrade it!
-    compat_features.incompat.insert(CEPH_OSD_FEATURE_INCOMPAT_BASE);
-  }
-  decode(clean_thru, bl);
-  decode(mounted, bl);
-  if (struct_v >= 4)
-    decode(osd_fsid, bl);
-  if (struct_v >= 6) {
-    epoch_t last_map_marked_full;
-    decode(last_map_marked_full, bl);
-  }
-  if (struct_v >= 7) {
-    map<int64_t,epoch_t> pool_last_map_marked_full;
-    decode(pool_last_map_marked_full, bl);
-  }
-  if (struct_v >= 9) {
-    decode(purged_snaps_last, bl);
-    decode(last_purged_snaps_scrub, bl);
-  } else {
-    purged_snaps_last = 0;
-  }
-  DECODE_FINISH(bl);
-}
-
 void OSDSuperblock::dump(Formatter *f) const
 {
   f->dump_stream("cluster_fsid") << cluster_fsid;

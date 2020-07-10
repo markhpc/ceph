@@ -21,31 +21,6 @@ using ceph::Formatter;
  * frag_info_t
  */
 
-void frag_info_t::encode(bufferlist &bl) const
-{
-  ENCODE_START(3, 2, bl);
-  encode(version, bl);
-  encode(mtime, bl);
-  encode(nfiles, bl);
-  encode(nsubdirs, bl);
-  encode(change_attr, bl);
-  ENCODE_FINISH(bl);
-}
-
-void frag_info_t::decode(bufferlist::const_iterator &bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(3, 2, 2, bl);
-  decode(version, bl);
-  decode(mtime, bl);
-  decode(nfiles, bl);
-  decode(nsubdirs, bl);
-  if (struct_v >= 3)
-    decode(change_attr, bl);
-  else
-    change_attr = 0;
-  DECODE_FINISH(bl);
-}
-
 void frag_info_t::dump(Formatter *f) const
 {
   f->dump_unsigned("version", version);
@@ -91,39 +66,6 @@ ostream& operator<<(ostream &out, const frag_info_t &f)
 /*
  * nest_info_t
  */
-
-void nest_info_t::encode(bufferlist &bl) const
-{
-  ENCODE_START(3, 2, bl);
-  encode(version, bl);
-  encode(rbytes, bl);
-  encode(rfiles, bl);
-  encode(rsubdirs, bl);
-  {
-    // removed field
-    int64_t ranchors = 0;
-    encode(ranchors, bl);
-  }
-  encode(rsnaps, bl);
-  encode(rctime, bl);
-  ENCODE_FINISH(bl);
-}
-
-void nest_info_t::decode(bufferlist::const_iterator &bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(3, 2, 2, bl);
-  decode(version, bl);
-  decode(rbytes, bl);
-  decode(rfiles, bl);
-  decode(rsubdirs, bl);
-  {
-    int64_t ranchors;
-    decode(ranchors, bl);
-  }
-  decode(rsnaps, bl);
-  decode(rctime, bl);
-  DECODE_FINISH(bl);
-}
 
 void nest_info_t::dump(Formatter *f) const
 {
@@ -210,24 +152,6 @@ ostream& operator<<(ostream &out, const quota_info_t &n)
  * client_writeable_range_t
  */
 
-void client_writeable_range_t::encode(bufferlist &bl) const
-{
-  ENCODE_START(2, 2, bl);
-  encode(range.first, bl);
-  encode(range.last, bl);
-  encode(follows, bl);
-  ENCODE_FINISH(bl);
-}
-
-void client_writeable_range_t::decode(bufferlist::const_iterator& bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
-  decode(range.first, bl);
-  decode(range.last, bl);
-  decode(follows, bl);
-  DECODE_FINISH(bl);
-}
-
 void client_writeable_range_t::dump(Formatter *f) const
 {
   f->open_object_section("byte range");
@@ -258,71 +182,8 @@ ostream& operator<<(ostream& out, const client_writeable_range_t& r)
 }
 
 /*
- * inline_data_t
- */
-void inline_data_t::encode(bufferlist &bl) const
-{
-  using ceph::encode;
-  encode(version, bl);
-  if (blp)
-    encode(*blp, bl);
-  else
-    encode(bufferlist(), bl);
-}
-void inline_data_t::decode(bufferlist::const_iterator &p)
-{
-  using ceph::decode;
-  decode(version, p);
-  uint32_t inline_len;
-  decode(inline_len, p);
-  if (inline_len > 0)
-    ceph::decode_nohead(inline_len, get_data(), p);
-  else
-    free_data();
-}
-
-
-/*
  * fnode_t
  */
-void fnode_t::encode(bufferlist &bl) const
-{
-  ENCODE_START(4, 3, bl);
-  encode(version, bl);
-  encode(snap_purged_thru, bl);
-  encode(fragstat, bl);
-  encode(accounted_fragstat, bl);
-  encode(rstat, bl);
-  encode(accounted_rstat, bl);
-  encode(damage_flags, bl);
-  encode(recursive_scrub_version, bl);
-  encode(recursive_scrub_stamp, bl);
-  encode(localized_scrub_version, bl);
-  encode(localized_scrub_stamp, bl);
-  ENCODE_FINISH(bl);
-}
-
-void fnode_t::decode(bufferlist::const_iterator &bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(3, 2, 2, bl);
-  decode(version, bl);
-  decode(snap_purged_thru, bl);
-  decode(fragstat, bl);
-  decode(accounted_fragstat, bl);
-  decode(rstat, bl);
-  decode(accounted_rstat, bl);
-  if (struct_v >= 3) {
-    decode(damage_flags, bl);
-  }
-  if (struct_v >= 4) {
-    decode(recursive_scrub_version, bl);
-    decode(recursive_scrub_stamp, bl);
-    decode(localized_scrub_version, bl);
-    decode(localized_scrub_stamp, bl);
-  }
-  DECODE_FINISH(bl);
-}
-
 void fnode_t::dump(Formatter *f) const
 {
   f->dump_unsigned("version", version);
@@ -374,24 +235,6 @@ void fnode_t::generate_test_instances(std::list<fnode_t*>& ls)
 /*
  * old_rstat_t
  */
-void old_rstat_t::encode(bufferlist& bl) const
-{
-  ENCODE_START(2, 2, bl);
-  encode(first, bl);
-  encode(rstat, bl);
-  encode(accounted_rstat, bl);
-  ENCODE_FINISH(bl);
-}
-
-void old_rstat_t::decode(bufferlist::const_iterator& bl)
-{
-  DECODE_START_LEGACY_COMPAT_LEN(2, 2, 2, bl);
-  decode(first, bl);
-  decode(rstat, bl);
-  decode(accounted_rstat, bl);
-  DECODE_FINISH(bl);
-}
-
 void old_rstat_t::dump(Formatter *f) const
 {
   f->dump_unsigned("snapid", first);
@@ -455,31 +298,6 @@ feature_bitset_t& feature_bitset_t::operator-=(const feature_bitset_t& other)
   return *this;
 }
 
-void feature_bitset_t::encode(bufferlist& bl) const {
-  using ceph::encode;
-  using ceph::encode_nohead;
-  uint32_t len = _vec.size() * sizeof(block_type);
-  encode(len, bl);
-  encode_nohead(_vec, bl);
-}
-
-void feature_bitset_t::decode(bufferlist::const_iterator &p) {
-  using ceph::decode;
-  using ceph::decode_nohead;
-  uint32_t len;
-  decode(len, p);
-
-  _vec.clear();
-  if (len >= sizeof(block_type))
-    decode_nohead(len / sizeof(block_type), _vec, p);
-
-  if (len % sizeof(block_type)) {
-    ceph_le64 buf{};
-    p.copy(len % sizeof(block_type), (char*)&buf);
-    _vec.push_back((block_type)buf);
-  }
-}
-
 void feature_bitset_t::dump(Formatter *f) const {
   CachedStackStringStream css;
   print(*css);
@@ -499,20 +317,6 @@ void feature_bitset_t::print(ostream& out) const
 /*
  * metric_spec_t
  */
-void metric_spec_t::encode(bufferlist& bl) const {
-  using ceph::encode;
-  ENCODE_START(1, 1, bl);
-  encode(metric_flags, bl);
-  ENCODE_FINISH(bl);
-}
-
-void metric_spec_t::decode(bufferlist::const_iterator &p) {
-  using ceph::decode;
-  DECODE_START(1, p);
-  decode(metric_flags, p);
-  DECODE_FINISH(p);
-}
-
 void metric_spec_t::dump(Formatter *f) const {
   f->dump_object("metric_flags", metric_flags);
 }
@@ -525,27 +329,6 @@ void metric_spec_t::print(ostream& out) const
 /*
  * client_metadata_t
  */
-void client_metadata_t::encode(bufferlist& bl) const
-{
-  ENCODE_START(3, 1, bl);
-  encode(kv_map, bl);
-  encode(features, bl);
-  encode(metric_spec, bl);
-  ENCODE_FINISH(bl);
-}
-
-void client_metadata_t::decode(bufferlist::const_iterator& p)
-{
-  DECODE_START(3, p);
-  decode(kv_map, p);
-  if (struct_v >= 2)
-    decode(features, p);
-  if (struct_v >= 3) {
-    decode(metric_spec, p);
-  }
-  DECODE_FINISH(p);
-}
-
 void client_metadata_t::dump(Formatter *f) const
 {
   f->dump_object("client_features", features);
@@ -557,6 +340,8 @@ void client_metadata_t::dump(Formatter *f) const
 /*
  * session_info_t
  */
+
+/*
 void session_info_t::encode(bufferlist& bl, uint64_t features) const
 {
   ENCODE_START(7, 7, bl);
@@ -602,7 +387,7 @@ void session_info_t::decode(bufferlist::const_iterator& p)
   }
   DECODE_FINISH(p);
 }
-
+*/
 void session_info_t::dump(Formatter *f) const
 {
   f->dump_stream("inst") << inst;

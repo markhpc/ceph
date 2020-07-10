@@ -31,9 +31,14 @@ public:
   Anchor() {}
   Anchor(inodeno_t i, inodeno_t di, std::string_view str, __u8 tp) :
     ino(i), dirino(di), d_name(str), d_type(tp) {}
-
-  void encode(bufferlist &bl) const;
-  void decode(bufferlist::const_iterator &bl);
+  DENC(Anchor, v, p) {
+    DENC_START(1, 1, p);
+    denc(v.ino, p);
+    denc(v.dirino, p);
+    denc(v.d_name, p);
+    denc(v.d_type, p);
+    DENC_FINISH(p);
+  }
   void dump(Formatter *f) const;
   static void generate_test_instances(std::list<Anchor*>& ls);
   bool operator==(const Anchor &r) {
@@ -48,7 +53,7 @@ public:
 
   int omap_idx = -1;	// stored in which omap object
 };
-WRITE_CLASS_ENCODER(Anchor)
+WRITE_CLASS_DENC(Anchor)
 
 class RecoveredAnchor : public Anchor {
 public:
@@ -56,6 +61,7 @@ public:
 
   mds_rank_t auth = MDS_RANK_NONE; // auth hint
 };
+WRITE_CLASS_DENC(RecoveredAnchor)
 
 class OpenedAnchor : public Anchor {
 public:
@@ -66,6 +72,7 @@ public:
 
   mutable int nref = 0; // how many children
 };
+WRITE_CLASS_DENC(OpenedAnchor)
 
 ostream& operator<<(ostream& out, const Anchor &a);
 #endif
