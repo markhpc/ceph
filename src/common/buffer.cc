@@ -45,8 +45,9 @@ using std::string;
 
 using namespace ceph;
 
-#define CEPH_BUFFER_ALLOC_UNIT  4096u
-#define CEPH_BUFFER_APPEND_SIZE (CEPH_BUFFER_ALLOC_UNIT - sizeof(raw_combined))
+#define CEPH_BUFFER_ALLOC_UNIT_BASE std::size_t{ 512 }
+#define CEPH_BUFFER_ALLOC_UNIT_MAX (CEPH_BUFFER_ALLOC_UNIT_BASE * (1 << 16))
+#define CEPH_BUFFER_APPEND_SIZE (CEPH_BUFFER_ALLOC_UNIT_BASE - sizeof(raw_combined))
 
 #ifdef BUFFER_DEBUG
 static ceph::spinlock debug_lock;
@@ -350,7 +351,7 @@ static ceph::spinlock debug_lock;
   }
   ceph::unique_leakable_ptr<buffer::raw> buffer::create_small_page_aligned(unsigned len) {
     if (len < CEPH_PAGE_SIZE) {
-      return create_aligned(len, CEPH_BUFFER_ALLOC_UNIT);
+      return create_aligned(len, CEPH_BUFFER_ALLOC_UNIT_BASE);
     } else {
       return create_aligned(len, CEPH_PAGE_SIZE);
     }
@@ -1324,8 +1325,14 @@ static ceph::spinlock debug_lock;
     // make a new buffer.  fill out a complete page, factoring in the
     // raw_combined overhead.
     size_t need = round_up_to(len, sizeof(size_t)) + sizeof(raw_combined);
-    size_t alen = round_up_to(need, CEPH_BUFFER_ALLOC_UNIT) -
-      sizeof(raw_combined);
+    size_t alen = round_up_to(need, CEPH_BUFFER_ALLOC_UNIT_BASE);
+    if (_carriage == &_buffers.back()) {
+      size_t nlen = (_carriage->raw_length() + sizeof(raw_combined)) << 1;
+      nlen = std::min(nlen, CEPH_BUFFER_ALLOC_UNIT_MAX);
+      alen = std::max(alen, nlen);
+    }
+    alen -= sizeof(raw_combined);
+
     auto new_back = \
       ptr_node::create(raw_combined::create(alen, 0, get_mempool()));
     new_back->set_length(0);   // unused, so far.
