@@ -306,7 +306,8 @@ namespace PriorityCache
 
       // Commit the new cache size
       int64_t committed = it->second->commit_cache_size(tuned_mem);
-
+      // rotate the bins
+      it->second->rotate_bins();
       // Update the perf counters
       int64_t alloc = it->second->get_cache_bytes();
 

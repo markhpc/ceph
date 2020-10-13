@@ -12,6 +12,7 @@
 
 #include <string>
 #include <mutex>
+#include <boost/circular_buffer.hpp> 
 
 #include "ShardedCache.h"
 #include "common/autovector.h"
@@ -57,6 +58,7 @@ std::shared_ptr<rocksdb::Cache> NewBinnedLRUCache(
     const std::string& name = "");
 
 struct BinnedLRUHandle {
+  std::shared_ptr<uint64_t> age_bin;
   void* value;
   void (*deleter)(const rocksdb::Slice&, void* value);
   BinnedLRUHandle* next_hash;
@@ -226,6 +228,18 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
   // Retrieves high pri pool usage
   size_t GetHighPriPoolUsage() const;
 
+  // Rotate the bins
+  void rotate_bins();
+
+  // Get the bin count
+  uint32_t _get_bin_count() const;
+
+  // Set the bin count
+  void _set_bin_count(uint32_t count);
+
+  // Get the byte counts for a range of age bins
+  uint64_t sum_bins(uint32_t start, uint32_t end) const;
+
   // Collect internal stats of shard
   void add_stats(size_t& capacity,
 		 size_t& high_pri_pool_usage,
@@ -308,6 +322,9 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
   // don't mind mutex_ invoking the non-const actions.
   mutable std::mutex mutex_;
 
+  // Circular buffer of byte counters for age binning
+  boost::circular_buffer<std::shared_ptr<uint64_t>> age_bins;
+
   std::atomic<uint64_t> inserts_low = 0;
   std::atomic<uint64_t> inserts_high = 0;
   std::atomic<uint64_t> lookups = 0;
@@ -350,6 +367,11 @@ class alignas(CACHE_LINE_SIZE) BinnedLRUCacheShard : public CacheShard {
   virtual int64_t get_committed_size() const {
     return GetCapacity();
   }
+  virtual void rotate_bins();
+  uint64_t sum_bins(uint32_t start, uint32_t end) const;
+  uint32_t _get_bin_count() const;
+  void _set_bin_count(uint32_t count);
+
   virtual std::string get_cache_name() const {
     return "RocksDB Binned LRU Cache";
   }
