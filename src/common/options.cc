@@ -4383,6 +4383,26 @@ std::vector<Option> get_global_options() {
     .add_see_also("bluestore_cache_autotune")
     .set_description("The number of seconds to wait between rebalances when cache autotune is enabled."),
 
+    Option("bluestore_cache_autotune_kv_intervals", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("1 2 6 24 120 720 0 0 0 0")
+    .add_see_also("bluestore_cache_autotune_interval")
+    .set_description("A 10 element, space separated list of cache age intervals grouped by priority such that PRI1=[0,n), PRI2=[n,n+1), PRI3=[n+1,n+2) ... PRI10=[n+8,n+9)"),
+
+    Option("bluestore_cache_autotune_kv_onode_intervals", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("0 0 0 0 0 0 0 0 0 720")
+    .add_see_also("bluestore_cache_autotune_interval")
+    .set_description("A 10 element, space separated list of cache age intervals grouped by priority such that PRI1=[0,n), PRI2=[n,n+1), PRI3=[n+1,n+2) ... PRI10=[n+8,n+9)"),
+
+    Option("bluestore_cache_autotune_meta_intervals", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("1 2 6 24 120 720 0 0 0 0")
+    .add_see_also("bluestore_cache_autotune_interval")
+    .set_description("A 10 element, space separated list of cache age intervals grouped by priority such that PRI1=[0,n), PRI2=[n,n+1), PRI3=[n+1,n+2) ... PRI10=[n+8,n+9)"),
+
+    Option("bluestore_cache_autotune_data_intervals", Option::TYPE_STR, Option::LEVEL_DEV)
+    .set_default("0 0 0 0 1 2 6 24 120 720")
+    .add_see_also("bluestore_cache_autotune_interval")
+    .set_description("A 10 element, space separated list of cache age intervals grouped by priority such that PRI1=[0,n), PRI2=[n,n+1), PRI3=[n+1,n+2) ... PRI10=[n+8,n+9)"),
+
     Option("bluestore_alloc_stats_dump_interval", Option::TYPE_FLOAT, Option::LEVEL_DEV)
       .set_default(3600 * 24)
       .set_description("The period (in second) for logging allocation statistics."),
@@ -4443,7 +4463,7 @@ std::vector<Option> get_global_options() {
     .set_description("Enable use of rocksdb column families for bluestore metadata"),
 
     Option("bluestore_rocksdb_cfs", Option::TYPE_STR, Option::LEVEL_DEV)
-    .set_default("m(3) O(3,0-13)=block_cache={high_ratio=1.000} L")
+    .set_default("m(3) O(3,0-13)=block_cache={high_ratio=0.500} L")
     .set_description("Definition of column families and their sharding")
     .set_long_description("Space separated list of elements: column_def [ '=' rocksdb_options ]. "
 			  "column_def := column_name [ '(' shard_count [ ',' hash_begin '-' [ hash_end ] ] ')' ]. "

@@ -100,6 +100,19 @@ namespace PriorityCache {
 
     // Get the name of this cache.
     virtual std::string get_cache_name() const = 0;
+
+    // Rotate the bins
+    virtual void rotate_bins() = 0;
+
+    // Import user intervals (from PRI1 to LAST-1)
+    virtual void import_intervals(const std::vector<uint64_t> &intervals) = 0;
+
+    // Set intervals (PRI0 and LAST should be ignored)
+    virtual void set_intervals(PriorityCache::Priority pri, uint64_t end_interval) = 0;
+
+    // Get intervals
+    virtual uint64_t get_intervals(PriorityCache::Priority pri) const = 0;
+
   };
 
   class Manager {
