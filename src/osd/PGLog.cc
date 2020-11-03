@@ -61,7 +61,7 @@ void PGLog::IndexedLog::trim(
   eversion_t *write_from_dups)
 {
   lgeneric_subdout(cct, osd, 10) << "IndexedLog::trim s=" << s << dendl;
-  ceph_assert(s <= can_rollback_to);
+//  ceph_assert(s <= can_rollback_to);
   if (complete_to != log.end())
     lgeneric_subdout(cct, osd, 20) << " complete_to " << complete_to->version << dendl;
 
@@ -734,6 +734,7 @@ void PGLog::_write_log_and_missing_wo_missing(
   const DoutPrefixProvider *dpp
   )
 {
+/*
   ldpp_dout(dpp, 10) << "_write_log_and_missing_wo_missing, clearing up to " << dirty_to
 		     << " dirty_to_dups=" << dirty_to_dups
 		     << " dirty_from_dups=" << dirty_from_dups
@@ -753,8 +754,8 @@ void PGLog::_write_log_and_missing_wo_missing(
       dirty_from.get_key_name(), eversion_t::max().get_key_name());
     clear_after(log_keys_debug, dirty_from.get_key_name());
   }
-
-  for (auto p = log.log.begin();
+*/
+  for (list<pg_log_entry_t>::iterator p = log.log.begin();
        p != log.log.end() && p->version <= dirty_to;
        ++p) {
     bufferlist bl(sizeof(*p) * 2);
@@ -783,6 +784,7 @@ void PGLog::_write_log_and_missing_wo_missing(
     }
   }
 
+/*
   // process dups after log_keys_debug is filled, so dups do not
   // end up in that set
   if (dirty_to_dups != eversion_t()) {
@@ -805,7 +807,7 @@ void PGLog::_write_log_and_missing_wo_missing(
       coll, log_oid,
       dirty_from_dup.get_key_name(), max.get_key_name());
   }
-
+*/
   ldpp_dout(dpp, 10) << __func__ << " going to encode log.dups.size()="
 		     << log.dups.size() << dendl;
   for (const auto& entry : log.dups) {
@@ -884,7 +886,7 @@ void PGLog::_write_log_and_missing(
     to_remove.emplace(std::move(key));
   }
   trimmed.clear();
-
+/*
   if (touch_log)
     t.touch(coll, log_oid);
   if (dirty_to != eversion_t()) {
@@ -901,8 +903,8 @@ void PGLog::_write_log_and_missing(
       dirty_from.get_key_name(), eversion_t::max().get_key_name());
     clear_after(log_keys_debug, dirty_from.get_key_name());
   }
-
-  for (auto p = log.log.begin();
+*/
+  for (list<pg_log_entry_t>::iterator p = log.log.begin();
        p != log.log.end() && p->version <= dirty_to;
        ++p) {
     bufferlist bl(sizeof(*p) * 2);
@@ -931,6 +933,7 @@ void PGLog::_write_log_and_missing(
     }
   }
 
+/*
   // process dups after log_keys_debug is filled, so dups do not
   // end up in that set
   if (dirty_to_dups != eversion_t()) {
@@ -953,7 +956,7 @@ void PGLog::_write_log_and_missing(
       coll, log_oid,
       dirty_from_dup.get_key_name(), max.get_key_name());
   }
-
+*/
   ldpp_dout(dpp, 10) << __func__ << " going to encode log.dups.size()="
 		     << log.dups.size() << dendl;
   for (const auto& entry : log.dups) {
@@ -1007,10 +1010,11 @@ void PGLog::_write_log_and_missing(
       log.get_rollback_info_trimmed_to(),
       (*km)["rollback_info_trimmed_to"]);
   }
-
+/*
   if (!to_remove.empty())
     t.omap_rmkeys(coll, log_oid, to_remove);
   ldpp_dout(dpp, 10) << "end of " << __func__ << dendl;
+*/
 }
 
 void PGLog::rebuild_missing_set_with_deletes(
