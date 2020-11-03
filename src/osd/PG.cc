@@ -974,6 +974,7 @@ void PG::prepare_write(
 {
   info.stats.stats.add(unstable_stats);
   unstable_stats.clear();
+
   map<string,bufferlist> km;
   string key_to_remove;
   if (dirty_big_info || dirty_info) {
@@ -994,10 +995,10 @@ void PG::prepare_write(
   }
   pglog.write_log_and_missing(
     t, &km, coll, pgmeta_oid, pool.info.require_rollback());
-  if (!km.empty())
-    t.omap_setkeys(coll, pgmeta_oid, km);
-  if (!key_to_remove.empty())
-    t.omap_rmkey(coll, pgmeta_oid, key_to_remove);
+//  if (!km.empty())
+//    t.omap_setkeys(coll, pgmeta_oid, km);
+//  if (!key_to_remove.empty())
+//    t.omap_rmkey(coll, pgmeta_oid, key_to_remove);
 }
 
 #pragma GCC diagnostic ignored "-Wpragmas"
