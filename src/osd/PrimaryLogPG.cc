@@ -10484,7 +10484,7 @@ void PrimaryLogPG::op_applied(const eversion_t &applied_version)
 {
   dout(10) << "op_applied version " << applied_version << dendl;
   ceph_assert(applied_version != eversion_t());
-  ceph_assert(applied_version <= info.last_update);
+//  ceph_assert(applied_version <= info.last_update);
   recovery_state.local_write_applied(applied_version);
   if (is_primary()) {
     if (scrubber.active) {
@@ -10570,10 +10570,11 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
     ceph_assert(ctx->at_version >= projected_last_update);
     projected_last_update = ctx->at_version;
   }
+/*
   for (auto &&entry: ctx->log) {
     projected_log.add(entry);
   }
-
+*/
   recovery_state.pre_submit_op(
     soid,
     ctx->log,
