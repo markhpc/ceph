@@ -3065,12 +3065,13 @@ TEST_P(StoreTest, OmapBench) {
 
   // Make the collection
   coll_t cid;
-  auto ch = store->create_new_collection(cid);
+//  auto ch = store->create_collection(cid);
+  ObjectStore::Sequencer osr("test");
   {
     ObjectStore::Transaction t;
     t.create_collection(cid, 0);
     cerr << "Creating collection " << cid << std::endl;
-    r = queue_transaction(store, ch, std::move(t));
+    r = apply_transaction(store, &osr, std::move(t));
     ASSERT_EQ(r, 0);
   }
 
@@ -3107,7 +3108,7 @@ TEST_P(StoreTest, OmapBench) {
       ObjectStore::Transaction t;
       t.touch(cid, objects[obj]);
       t.omap_setheader(cid, objects[obj], header);
-      r = queue_transaction(store, ch, std::move(t));
+      r = apply_transaction(store, &osr, std::move(t));
       ASSERT_EQ(r, 0);
     }
   }
@@ -3139,7 +3140,7 @@ TEST_P(StoreTest, OmapBench) {
       // time omap_setkeys and queue_transaction
       const utime_t start = ceph_clock_now();
       t.omap_setkeys(cid, objects[obj], km);
-      r = queue_transaction(store, ch, std::move(t));
+      r = apply_transaction(store, &osr, std::move(t));
       dur += ceph_clock_now() - start;
 
       ASSERT_EQ(r, 0);
@@ -3161,7 +3162,7 @@ TEST_P(StoreTest, OmapBench) {
     bufferlist h;
     map<string,bufferlist> rm;
     const utime_t start = ceph_clock_now();
-    store->omap_get(ch, objects[obj], &h, &rm);
+    store->omap_get(cid, objects[obj], &h, &rm);
     float dur = ceph_clock_now() - start;
     min = std::min(dur, min);
     max = std::max(dur, max);
@@ -3181,7 +3182,7 @@ TEST_P(StoreTest, OmapBench) {
   cout << "[OMAPBENCH] *** Running seek_to_first iteration test ***" << std::endl;
   for (int obj = 0; obj < obj_count; obj++) {
     map<string,bufferlist> r;
-    ObjectMap::ObjectMapIterator iter = store->get_omap_iterator(ch, objects[obj]);
+    ObjectMap::ObjectMapIterator iter = store->get_omap_iterator(cid, objects[obj]);
     const utime_t start = ceph_clock_now();
     for (iter->seek_to_first(); iter->valid(); iter->next()) {
       r[iter->key()] = iter->value();
@@ -3204,7 +3205,7 @@ TEST_P(StoreTest, OmapBench) {
   cout << "[OMAPBENCH] *** Running lower_bound iteration test ***" << std::endl;
   for (int obj = 0; obj < obj_count; obj++) {
     map<string,bufferlist> r;
-    ObjectMap::ObjectMapIterator iter = store->get_omap_iterator(ch, objects[obj]);
+    ObjectMap::ObjectMapIterator iter = store->get_omap_iterator(cid, objects[obj]);
     const utime_t start = ceph_clock_now();
     for (iter->lower_bound(string()); iter->valid(); iter->next()) {
       r[iter->key()] = iter->value();
@@ -3229,7 +3230,7 @@ TEST_P(StoreTest, OmapBench) {
     ObjectStore::Transaction t;
     t.remove(cid, objects[obj]);
     const utime_t start = ceph_clock_now();
-    r = queue_transaction(store, ch, std::move(t));
+    r = apply_transaction(store, &osr, std::move(t));
     float dur = ceph_clock_now() - start;
     min = (dur < min) ? dur : min;
     max = (dur > max) ? dur : max;
@@ -3246,7 +3247,7 @@ TEST_P(StoreTest, OmapBench) {
   {
     ObjectStore::Transaction t;
     t.remove_collection(cid);
-    r = queue_transaction(store, ch, std::move(t));
+    r = apply_transaction(store, &osr, std::move(t));
     ASSERT_EQ(r, 0);
   }
 }
