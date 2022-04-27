@@ -11,6 +11,27 @@ set_target_properties(crimson::cflags PROPERTIES
   INTERFACE_COMPILE_OPTIONS $<$<COMPILE_LANGUAGE:CXX>:-Wno-non-virtual-dtor>
   INTERFACE_LINK_LIBRARIES Seastar::seastar)
 
+# sort out which allocator to use
+if(ALLOCATOR STREQUAL "tcmalloc")
+  set(ALLOC_LIBS gperftools::tcmalloc)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
+elseif(ALLOCATOR STREQUAL "tcmalloc_minimal")
+  set(ALLOC_LIBS gperftools::tcmalloc_minimal)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
+elseif(ALLOCATOR STREQUAL "jemalloc")
+  set(ALLOC_LIBS JeMalloc::JeMalloc)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
+endif()
+
 set(crimson_common_srcs
   common/assert.cc
   common/buffer_io.cc
