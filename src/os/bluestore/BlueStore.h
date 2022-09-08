@@ -25,6 +25,7 @@
 #include <mutex>
 #include <condition_variable>
 
+#include <boost/container/flat_set.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/unordered_set.hpp>
 #include <boost/intrusive/set.hpp>
@@ -765,9 +766,7 @@ public:
   typedef boost::intrusive_ptr<Blob> BlobRef;
   typedef mempool::bluestore_cache_meta::map<int,BlobRef> blob_map_t;
 
-  /// a logical extent, pointing to (some portion of) a blob
-  typedef boost::intrusive::set_base_hook<boost::intrusive::optimize_size<true> > ExtentBase; //making an alias to avoid build warnings
-  struct Extent : public ExtentBase {
+  struct Extent {
     MEMPOOL_CLASS_HELPERS();
 
     uint32_t logical_offset = 0;      ///< logical offset
@@ -775,17 +774,44 @@ public:
     uint32_t length = 0;              ///< length
     BlobRef  blob;                    ///< the blob with our data
 
+    /// swap
+    friend void swap(Extent& e1, Extent& e2) {
+      using std::swap;
+      swap(e1.logical_offset, e2.logical_offset);
+      swap(e1.blob_offset, e2.blob_offset);
+      swap(e1.length, e2.length);
+      swap(e1.blob, e2.blob);
+    }
+
     /// ctor for lookup only
-    explicit Extent(uint32_t lo) : ExtentBase(), logical_offset(lo) { }
+    explicit Extent(uint32_t lo) : logical_offset(lo) { }
     /// ctor for delayed initialization (see decode_some())
-    explicit Extent() : ExtentBase() {
+    explicit Extent() {
     }
     /// ctor for general usage
     Extent(uint32_t lo, uint32_t o, uint32_t l, BlobRef& b)
-      : ExtentBase(),
-        logical_offset(lo), blob_offset(o), length(l) {
+      : logical_offset(lo), blob_offset(o), length(l) {
       assign_blob(b);
     }
+
+    /// copy constructor
+    Extent(const Extent& e) :
+        logical_offset(e.logical_offset),
+        blob_offset(e.blob_offset),
+        length(e.length) {
+      assign_blob(e.blob);
+    }
+
+    /// Move constructor
+    Extent(Extent&& e) noexcept : Extent() {
+      swap(*this, e);
+    }
+    /// Assignment Operator
+    Extent& operator=(Extent&& e) {
+      swap(*this, e);
+      return *this;
+    }
+
     ~Extent() {
       if (blob) {
 	blob->shared_blob->get_cache()->rm_extent();
@@ -829,8 +855,8 @@ public:
       return blob_start() < o || blob_end() > o + l;
     }
   };
-  typedef boost::intrusive::set<Extent> extent_map_t;
-
+//  typedef boost::container::flat_set<Extent> extent_map_t;
+  typedef mempool::bluestore_Extent::vector<Extent> extent_map_t;
 
   friend std::ostream& operator<<(std::ostream& out, const Extent& e);
 
@@ -864,6 +890,7 @@ public:
     extent_map_t extent_map;        ///< map of Extents to Blobs
     blob_map_t spanning_blob_map;   ///< blobs that span shards
     typedef boost::intrusive_ptr<Onode> OnodeRef;
+    bool is_sorted = false;
 
     struct Shard {
       bluestore_onode_t::shard_info *shard_info = nullptr;
@@ -902,11 +929,11 @@ public:
 
     ExtentMap(Onode *o);
     ~ExtentMap() {
-      extent_map.clear_and_dispose(DeleteDisposer());
+      extent_map.clear();
     }
 
     void clear() {
-      extent_map.clear_and_dispose(DeleteDisposer());
+      extent_map.clear();
       shards.clear();
       inline_bl.clear();
       clear_needs_reshard();
@@ -984,21 +1011,30 @@ public:
     /// ensure a range of the map is marked dirty
     void dirty_range(uint32_t offset, uint32_t length);
 
+    void sort();
+
     /// for seek_lextent test
     extent_map_t::iterator find(uint64_t offset);
+    extent_map_t::iterator lower_bound(uint64_t offset);
 
     /// seek to the first lextent including or after offset
     extent_map_t::iterator seek_lextent(uint64_t offset);
-    extent_map_t::const_iterator seek_lextent(uint64_t offset) const;
 
     /// add a new Extent
-    void add(uint32_t lo, uint32_t o, uint32_t l, BlobRef& b) {
-      extent_map.insert(*new Extent(lo, o, l, b));
+    void add(Extent e) {
+      if (is_sorted) {
+        // We can keep the is_sorted flag so long as the new Extent is larger
+        // than the last one in the extent_map.  Else, we must set the flag.
+        if (extent_map.size() > 0 && extent_map.back() > e) {
+          is_sorted = false;
+        }
+      }
+      extent_map.push_back(e);
+      onode->touch();
     }
-
-    /// remove (and delete) an Extent
-    void rm(extent_map_t::iterator p) {
-      extent_map.erase_and_dispose(p, DeleteDisposer());
+    Extent *add(uint32_t lo, uint32_t o, uint32_t l, BlobRef& b) {
+      add(Extent(lo, o, l, b));
+      return &extent_map.back();
     }
 
     bool has_any_lextents(uint64_t offset, uint64_t length);
@@ -1062,7 +1098,7 @@ public:
     int64_t estimate(
       uint64_t offset,
       uint64_t length,
-      const ExtentMap& extent_map,
+      ExtentMap& extent_map,
       const old_extent_map_t& old_extents,
       uint64_t min_alloc_size);
 
@@ -1122,7 +1158,7 @@ public:
                                            ///< gone after GC
 
   protected:
-    void process_protrusive_extents(const BlueStore::ExtentMap& extent_map, 
+    void process_protrusive_extents(BlueStore::ExtentMap& extent_map,
 				    uint64_t start_offset,
 				    uint64_t end_offset,
 				    uint64_t start_touch_offset,
@@ -1208,6 +1244,7 @@ public:
     void flush();
     void get();
     void put();
+    void touch();
 
     inline bool put_cache() {
       ceph_assert(!cached);
@@ -1352,8 +1389,9 @@ public:
                                    PerfCounters *logger);
     virtual void _add(Onode* o, int level) = 0;
     virtual void _rm(Onode* o) = 0;
-    virtual void _unpin_and_rm(Onode* o) = 0;
+    virtual void _touch(Onode* o) = 0;
 
+    virtual void _unpin_and_rm(Onode* o) = 0;
     virtual void move_pinned(OnodeCacheShard *to, Onode *o) = 0;
     virtual void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) = 0;
     bool empty() {
