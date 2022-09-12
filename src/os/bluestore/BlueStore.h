@@ -607,8 +607,8 @@ public:
 #ifdef CACHE_BLOB_BL
     mutable ceph::buffer::list blob_bl;     ///< cached encoded blob, blob is dirty if empty
 #endif
-    /// refs from this shard.  ephemeral if id<0, persisted if spanning.
-    bluestore_blob_use_tracker_t used_in_blob;
+     /// refs from this shard.  ephemeral if id<0, persisted if spanning.
+     bluestore_extent_ref_map_t ref_map;
 
   public:
 
@@ -618,14 +618,18 @@ public:
     void dump(ceph::Formatter* f) const;
     friend std::ostream& operator<<(std::ostream& out, const Blob &b);
 
-    const bluestore_blob_use_tracker_t& get_blob_use_tracker() const {
-      return used_in_blob;
+    const bluestore_extent_ref_map_t& get_ref_map() const {
+      return ref_map;
     }
     bool is_referenced() const {
-      return used_in_blob.is_not_empty();
+      return !ref_map.empty();
     }
     uint32_t get_referenced_bytes() const {
-      return used_in_blob.get_referenced_bytes();
+      uint32_t bytes = 0;
+      for (auto& r : ref_map.ref_map) {
+        bytes += r.second.refs * r.second.length;
+      }
+      return bytes;
     }
 
     bool is_spanning() const {
@@ -635,14 +639,11 @@ public:
     bool can_split() const {
       std::lock_guard l(shared_blob->get_cache()->lock);
       // splitting a BufferSpace writing list is too hard; don't try.
-      return shared_blob->bc.writing.empty() &&
-             used_in_blob.can_split() &&
-             get_blob().can_split();
+      return shared_blob->bc.writing.empty() && get_blob().can_split();
     }
 
     bool can_split_at(uint32_t blob_offset) const {
-      return used_in_blob.can_split_at(blob_offset) &&
-             get_blob().can_split_at(blob_offset);
+      return get_blob().can_split_at(blob_offset);
     }
 
     bool can_reuse_blob(uint32_t min_alloc_size,
@@ -672,10 +673,12 @@ public:
     void discard_unallocated(Collection *coll);
 
     /// get logical references
-    void get_ref(Collection *coll, uint32_t offset, uint32_t length);
+    void get_ref(uint64_t offset, uint32_t length);
     /// put logical references, and get back any released extents
-    bool put_ref(Collection *coll, uint32_t offset, uint32_t length,
+    bool put_ref(Collection *coll, uint64_t offset, uint32_t length,
 		 PExtentVector *r);
+    /// pass references for specific range to other blob
+    void pass_ref(Blob* other, uint64_t src_offset, uint32_t length, uint64_t dest_offset);
 
     /// split the blob
     void split(Collection *coll, uint32_t blob_offset, Blob *o);
@@ -703,7 +706,7 @@ public:
       _encode();
       p += blob_bl.length();
       if (include_ref_map) {
-	used_in_blob.bound_encode(p);
+	ref_map.bound_encode(p);
       }
     }
     void encode(
@@ -712,7 +715,7 @@ public:
       _encode();
       p.append(blob_bl);
       if (include_ref_map) {
-	used_in_blob.encode(p);
+	ref_map.encode(p);
       }
     }
     void decode(
@@ -725,7 +728,7 @@ public:
       blob_bl.clear();
       blob_bl.append(start, end - start);
       if (include_ref_map) {
-	used_in_blob.decode(p);
+	ref_map.decode(p);
       }
     }
 #else
@@ -739,7 +742,7 @@ public:
         denc(sbid, p);
       }
       if (include_ref_map) {
-	used_in_blob.bound_encode(p);
+	ref_map.bound_encode(p);
       }
     }
     void encode(
@@ -752,7 +755,7 @@ public:
         denc(sbid, p);
       }
       if (include_ref_map) {
-	used_in_blob.encode(p);
+	ref_map.encode(p);
       }
     }
     void decode(
