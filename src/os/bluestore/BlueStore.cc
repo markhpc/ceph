@@ -21,6 +21,7 @@
 
 #include <boost/container/flat_set.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/format.hpp>
 
 #include "include/cpp-btree/btree_set.h"
 
@@ -2485,6 +2486,10 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
   uint32_t dirty_range_begin = 0;
   uint32_t dirty_range_end = 0;
   bool src_dirty = false;
+
+  uint32_t ec = 0;
+  std::unordered_map<uint32_t, uint32_t> foo;
+
   for (auto ep = oldo->extent_map.seek_lextent(srcoff);
     ep != oldo->extent_map.extent_map.end();
     ++ep) {
@@ -2525,8 +2530,13 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
       for (auto p : blob.get_extents()) {
         if (p.is_valid()) {
           e.blob->shared_blob->get_ref(p.offset, p.length);
+// Mark Debug
+//          dout(0) << __func__ << " sbid: " << e.blob->shared_blob->get_sbid() << ", ref_map size: "
+//                  << e.blob->shared_blob->persistent->ref_map.ref_map.size() << dendl;
+          foo[e.blob->shared_blob->get_sbid()] = e.blob->shared_blob->persistent->ref_map.ref_map.size();
         }
       }
+
       txc->write_shared_blob(e.blob->shared_blob);
       dout(20) << __func__ << "    new " << *cb << dendl;
     }
@@ -2559,6 +2569,7 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
     }
     dout(20) << __func__ << "  dst " << *ne << dendl;
     ++n;
+    ++ec;
   }
   if ((!inject_21040 && src_dirty) ||
        (inject_21040 && dirty_range_end > dirty_range_begin)) {
@@ -2572,6 +2583,25 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
     newo->onode.size = dstoff + length;
   }
   newo->extent_map.dirty_range(dstoff, length);
+
+  // Mark debug
+  std::unordered_map<uint32_t, uint32_t> bar;
+  for (auto const &p : foo) {
+    bar[p.second]++;
+  }
+  boost::format fmt("%03d");
+  fmt % ec;
+  std::string str = " old_extents: " + fmt.str();
+  fmt % foo.size();
+  str += ", total_sbs " + fmt.str() + ", [ref_map.size():sbs]";
+  
+  for (uint32_t i = 1; i < bar.size(); i++) {
+    fmt % i;
+    str += ", [" + fmt.str() + ":";
+    fmt % bar[i];
+    str += fmt.str() + "]"; 
+  }
+  dout(0) << __func__ << str << dendl;
 }
 void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
                                   bool force)
