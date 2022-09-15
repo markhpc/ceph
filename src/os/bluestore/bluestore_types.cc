@@ -125,19 +125,20 @@ void bluestore_extent_ref_map_t::_check() const
   }
 }
 
-void bluestore_extent_ref_map_t::_maybe_merge_left(
-  map<uint64_t,record_t>::iterator& p)
+bluestore_extent_ref_map_t::map_t::iterator& bluestore_extent_ref_map_t::_maybe_merge_left(map_t::iterator& p)
 {
-  if (p == ref_map.begin())
-    return;
-  auto q = p;
-  --q;
-  if (q->second.refs == p->second.refs &&
-      q->first + q->second.length == p->first) {
-    q->second.length += p->second.length;
-    ref_map.erase(p);
-    p = q;
+  if (p != ref_map.begin()) {
+    auto q = p;
+    --q;
+    if (q->second.refs == p->second.refs &&
+        q->first + q->second.length == p->first) {
+        q->second.length += p->second.length;
+      p = ref_map.erase(p);
+      return p;
+    }
   }
+  ++p;
+  return p;
 }
 
 void bluestore_extent_ref_map_t::get(uint64_t offset, uint32_t length)
@@ -152,20 +153,16 @@ void bluestore_extent_ref_map_t::get(uint64_t offset, uint32_t length)
   while (length > 0) {
     if (p == ref_map.end()) {
       // nothing after offset; add the whole thing.
-      p = ref_map.insert(
-	map<uint64_t,record_t>::value_type(offset, record_t(length, 1))).first;
+      p = ref_map.insert(map_t::value_type(offset, record_t(length, 1))).first;
       break;
     }
     if (p->first > offset) {
       // gap
       uint64_t newlen = std::min<uint64_t>(p->first - offset, length);
-      p = ref_map.insert(
-	map<uint64_t,record_t>::value_type(offset,
-					   record_t(newlen, 1))).first;
+      p = ref_map.insert(map_t::value_type(offset, record_t(newlen, 1))).first;
       offset += newlen;
       length -= newlen;
-      _maybe_merge_left(p);
-      ++p;
+      p = _maybe_merge_left(p);
       continue;
     }
     if (p->first < offset) {
@@ -173,15 +170,20 @@ void bluestore_extent_ref_map_t::get(uint64_t offset, uint32_t length)
       ceph_assert(p->first + p->second.length > offset);
       uint64_t left = p->first + p->second.length - offset;
       p->second.length = offset - p->first;
-      p = ref_map.insert(map<uint64_t,record_t>::value_type(
-			   offset, record_t(left, p->second.refs))).first;
+      p = ref_map.insert(map_t::value_type(offset,
+                                           record_t(left, p->second.refs))).first;
       // continue below
     }
     ceph_assert(p->first == offset);
     if (length < p->second.length) {
-      ref_map.insert(make_pair(offset + length,
-			       record_t(p->second.length - length,
-					p->second.refs)));
+      // FIXME MAYBE
+      ref_map.insert(map_t::value_type(offset + length,
+			               record_t(p->second.length - length,
+				                p->second.refs)));
+
+      // reset since p may be invalid on insert 
+      p = ref_map.lower_bound(offset);
+
       p->second.length = length;
       ++p->second.refs;
       break;
@@ -189,11 +191,10 @@ void bluestore_extent_ref_map_t::get(uint64_t offset, uint32_t length)
     ++p->second.refs;
     offset += p->second.length;
     length -= p->second.length;
-    _maybe_merge_left(p);
-    ++p;
+    p = _maybe_merge_left(p);
   }
   if (p != ref_map.end())
-    _maybe_merge_left(p);
+    p = _maybe_merge_left(p);
   //_check();
 }
 
@@ -220,8 +221,7 @@ void bluestore_extent_ref_map_t::put(
     if (p->second.refs != 1) {
       unshared = false;
     }
-    p = ref_map.insert(map<uint64_t,record_t>::value_type(
-			 offset, record_t(left, p->second.refs))).first;
+    p = ref_map.insert(map_t::value_type(offset, record_t(left, p->second.refs))).first;
   }
   while (length > 0) {
     ceph_assert(p->first == offset);
@@ -229,20 +229,25 @@ void bluestore_extent_ref_map_t::put(
       if (p->second.refs != 1) {
 	unshared = false;
       }
-      ref_map.insert(make_pair(offset + length,
-			       record_t(p->second.length - length,
-					p->second.refs)));
+      // FIXME MAYBE
+      ref_map.insert(map_t::value_type(offset + length,
+			                   record_t(p->second.length - length,
+					            p->second.refs)));
+      // reset since p may be invalid on insert 
+      p = ref_map.lower_bound(offset);
+
       if (p->second.refs > 1) {
 	p->second.length = length;
 	--p->second.refs;
 	if (p->second.refs != 1) {
 	  unshared = false;
 	}
-	_maybe_merge_left(p);
+	p = _maybe_merge_left(p);
+        --p;
       } else {
 	if (release)
 	  release->push_back(bluestore_pextent_t(p->first, length));
-	ref_map.erase(p);
+	p = ref_map.erase(p);
       }
       goto out;
     }
@@ -253,16 +258,15 @@ void bluestore_extent_ref_map_t::put(
       if (p->second.refs != 1) {
 	unshared = false;
       }
-      _maybe_merge_left(p);
-      ++p;
+      p = _maybe_merge_left(p);
     } else {
       if (release)
 	release->push_back(bluestore_pextent_t(p->first, p->second.length));
-      ref_map.erase(p++);
+      p = ref_map.erase(p);
     }
   }
   if (p != ref_map.end())
-    _maybe_merge_left(p);
+    p = _maybe_merge_left(p);
   //_check();
 out:
   if (maybe_unshared) {

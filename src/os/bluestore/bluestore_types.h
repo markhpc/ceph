@@ -148,7 +148,8 @@ struct denc_traits<PExtentVector> {
   }
 };
 
-/// extent_map: a std::map of reference counted extents
+
+/// extent_map: a boost::flat_map of reference counted extents
 struct bluestore_extent_ref_map_t {
   struct record_t {
     uint32_t length;
@@ -159,12 +160,16 @@ struct bluestore_extent_ref_map_t {
       denc_varint(v.refs, p);
     }
   };
-
-  typedef mempool::bluestore_cache_other::map<uint64_t,record_t> map_t;
+  typedef mempool::bluestore_cache_other::flat_map<uint64_t,record_t> map_t;
   map_t ref_map;
-
+/*
+  bluestore_extent_ref_map_t() {
+    // typically have 1-4 extents at once up to around 10-12 max?
+    ref_map.reserve(4);
+  }
+*/
   void _check() const;
-  void _maybe_merge_left(map_t::iterator& p);
+  map_t::iterator& _maybe_merge_left(map_t::iterator& p);
 
   void clear() {
     ref_map.clear();
