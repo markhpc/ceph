@@ -755,7 +755,7 @@ void PGLog::_write_log_and_missing_wo_missing(
     clear_after(log_keys_debug, dirty_from.get_key_name());
   }
 */
-  for (list<pg_log_entry_t>::iterator p = log.log.begin();
+  for (auto p = log.log.begin();
        p != log.log.end() && p->version <= dirty_to;
        ++p) {
     bufferlist bl(sizeof(*p) * 2);
