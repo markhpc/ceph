@@ -11,6 +11,8 @@
 #include <thread>
 #include <stack>
 #include <gtest/gtest.h>
+#include "common/dout.h"
+#include "common/debug.h"
 #include "global/global_init.h"
 #include "common/ceph_argparse.h"
 #include "include/stringify.h"
@@ -881,6 +883,79 @@ TEST(BlueFS, test_tracker_50965) {
   fs.close_writer(h_slow);
   fs.close_writer(h_db);
 
+  fs.umount();
+}
+
+// borrowed from store_test
+static bool bl_eq(bufferlist& expected, bufferlist& actual) {
+  if (expected.contents_equal(actual))
+    return true;
+
+  unsigned first = 0;
+  if(expected.length() != actual.length()) {
+    cout << "--- buffer lengths mismatch " << std::hex
+         << "expected 0x" << expected.length() << " != actual 0x"
+         << actual.length() << std::dec << std::endl;
+  }
+  auto len = std::min(expected.length(), actual.length());
+  while ( first<len && expected[first] == actual[first])
+    ++first;
+  unsigned last = len;
+  while (last > 0 && expected[last-1] == actual[last-1])
+    --last;
+  if(len > 0) {
+    cout << "--- buffer mismatch between offset 0x" << std::hex << first
+         << " and 0x" << last << ", total 0x" << len << std::dec
+         << std::endl;
+    cout << "--- expected:\n";
+    expected.hexdump(cout);
+    cout << "--- actual:\n";
+    actual.hexdump(cout);
+  }
+  return false;
+}
+
+TEST(BlueFS, test_write_wal) {
+  uint64_t size_wal = 1048576 * 64;
+  TempBdev bdev_wal{size_wal};
+  uint64_t size_db = 1048576 * 128;
+  TempBdev bdev_db{size_db};
+  uint64_t size_slow = 1048576 * 256;
+  TempBdev bdev_slow{size_slow};
+
+  ConfSaver conf(g_ceph_context->_conf);
+  conf.SetVal("bluefs_min_flush_size", "65536");
+  conf.ApplyChanges();
+
+  BlueFS fs(g_ceph_context);
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_WAL,  bdev_wal.path,  false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_DB,   bdev_db.path,   false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_SLOW, bdev_slow.path, false));
+  uuid_d fsid;
+  ASSERT_EQ(0, fs.mkfs(fsid, { BlueFS::BDEV_DB, true, true }));
+  ASSERT_EQ(0, fs.mount());
+  ASSERT_EQ(0, fs.maybe_verify_layout({ BlueFS::BDEV_DB, true, true }));
+
+  string dir_db = "db.wal";
+  ASSERT_EQ(0, fs.mkdir(dir_db));
+
+  string wal_file = "wal1.log";
+  BlueFS::FileWriter *writer;
+  ASSERT_EQ(0, fs.open_for_write(dir_db, wal_file, &writer, false));
+  ASSERT_NE(nullptr, writer);
+
+  bufferlist bl1;
+  std::unique_ptr<char[]> buf1 = gen_buffer(70000);
+  bufferptr bp1 = buffer::claim_char(70000, buf1.get());
+  bl1.push_back(bp1);
+  writer->append(bl1.c_str(), bl1.length());
+  fs.flush(writer);
+
+  BlueFS::FileReader *reader;
+  ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
+  bufferlist read_bl;
+  fs.read(reader, 0, 70000, &read_bl, NULL);
+  ASSERT_TRUE(bl_eq(bl1, read_bl));
   fs.umount();
 }
 
