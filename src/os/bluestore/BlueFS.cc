@@ -2229,6 +2229,176 @@ int64_t BlueFS::_read_random(
   return ret;
 }
 
+int64_t BlueFS::_read_wal(
+  FileReader *h,         ///< [in] read from here
+  uint64_t off,          ///< [in] offset
+  size_t len,            ///< [in] this many bytes
+  bufferlist *outbl,     ///< [out] optional: reference the result here
+  char *out)             ///< [out] optional: or copy it here
+{
+  auto t0 = mono_clock::now();
+  FileReaderBuffer *buf = &(h->buf);
+
+  bool prefetch = !outbl && !out;
+  dout(10) << __func__ << " h " << h
+           << " 0x" << std::hex << off << "~" << len << std::dec
+	   << " from " << lock_fnode_print(h->file)
+	   << (prefetch ? " prefetch" : "")
+	   << dendl;
+
+  ++h->file->num_reading;
+
+  if (!h->ignore_eof &&
+      off + len > h->file->fnode.size) {
+    if (off > h->file->fnode.size)
+      len = 0;
+    else
+      len = h->file->fnode.size - off;
+    dout(20) << __func__ << " reaching (or past) eof, len clipped to 0x"
+	     << std::hex << len << std::dec << dendl;
+  }
+  logger->inc(l_bluefs_read_count, 1);
+  logger->inc(l_bluefs_read_bytes, len);
+  if (prefetch) {
+    logger->inc(l_bluefs_read_prefetch_count, 1);
+    logger->inc(l_bluefs_read_prefetch_bytes, len);
+  }
+
+  if (outbl)
+    outbl->clear();
+
+  int64_t ret = 0;
+
+  // WAL data is wrapped in an envelope that has a format of [length of flush, payload, file ino]
+  // wal_data_logical_offset points to the offset of the payload we are currently in.
+  uint64_t wal_data_logical_offset = 0;
+  // offset including evelopes
+  uint64_t flush_offset = 0;
+
+  // we don't want multiple threads reading this at the same time
+  //
+  std::unique_lock u_lock(h->lock);
+
+
+  uint64_t remaining_len = len;
+  while (remaining_len > 0) {
+    size_t left;
+    // NOTE: we start reading from 0 always, not from offset per se
+    uint64_t x_off = 0;
+    auto p = h->file->fnode.seek(flush_offset, &x_off);
+    if (p == h->file->fnode.extents.end()) {
+      dout(5) << __func__ << " reading less then required "
+        << ret << "<" << ret + len << dendl;
+      break;
+    }
+
+    // read first part of wal flush
+    {
+      int r;
+      // TODO(pere): read extent length or max read size conf
+      if (!cct->_conf->bluefs_check_for_zeros) {
+        r = _bdev_read(p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf->bl, ioc[p->bdev],
+            false);
+      } else {
+        r = _read_and_check(
+            p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf->bl, ioc[p->bdev],
+            false);
+      }
+      ceph_assert(r == 0);
+    }
+
+    uint64_t flush_length = *((uint64_t*)buf->bl.c_str());
+    dout(2) << __func__ << " flush_length " << flush_length << dendl;
+    // check if we start reading from this chunk of flush
+    bool in_range = off >= wal_data_logical_offset && off < wal_data_logical_offset + flush_length;
+    if (!in_range) {
+      if (off < wal_data_logical_offset) {
+        // move to next flush
+        // TODO(pere): do we check "ino" here too?
+        wal_data_logical_offset += flush_length;
+        flush_offset += sizeof(uint64_t)*2 + flush_length;
+        continue;
+      }
+      // we can't read more
+      dout(5) << __func__ << " reading less then required "
+        << ret << "<" << ret + len << dendl;
+      break;
+
+    }
+
+    flush_offset += sizeof(uint64_t);
+
+
+    uint64_t data_to_read_from_flush = flush_length;
+    while (data_to_read_from_flush > 0) {
+      uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
+      if (data_left_on_buffer > 0) {
+        // read data from buffer
+        uint64_t amount_to_copy = std::min(remaining_len, data_left_on_buffer);
+        if (outbl) {
+          bufferlist t;
+          t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
+          outbl->claim_append(t);
+        }
+        flush_offset += amount_to_copy;
+        data_to_read_from_flush -= amount_to_copy;
+
+      } else {
+        // load data from disk
+        auto p = h->file->fnode.seek(flush_offset, &x_off);
+        int r = _bdev_read(p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf->bl, ioc[p->bdev],
+            false);
+        ceph_assert(r == 0);
+      }
+
+    }
+    remaining_len -= flush_length;
+    wal_data_logical_offset += flush_length;
+    ret += flush_length;
+
+    // TODO(pere): check marker
+    
+    // TODO(pere): is this any useful?
+    // we are in range, copy all flush data
+    // left = buf->get_buf_remaining(off);
+    // dout(20) << __func__ << " left 0x" << std::hex << left
+    //          << " len 0x" << len << std::dec << dendl;
+    //
+    // int64_t r = std::min(len, left);
+    // if (outbl) {
+    //   bufferlist t;
+    //   t.substr_of(buf->bl, off - buf->bl_off, r);
+    //   outbl->claim_append(t);
+    // }
+    // if (out) {
+    //   auto p = buf->bl.begin();
+    //   p.seek(off - buf->bl_off);
+    //   p.copy(r, out);
+    //   out += r;
+    // }
+    //
+    // dout(30) << __func__ << " result chunk (0x"
+    //          << std::hex << r << std::dec << " bytes):\n";
+    // bufferlist t;
+    // t.substr_of(buf->bl, off - buf->bl_off, r);
+    // t.hexdump(*_dout);
+    // *_dout << dendl;
+    //
+    // off += r;
+    // len -= r;
+    // ret += r;
+    // buf->pos += r;
+  }
+
+  dout(20) << __func__ << std::hex
+           << " got 0x" << ret
+           << std::dec  << dendl;
+  ceph_assert(!outbl || (int)outbl->length() == ret);
+  --h->file->num_reading;
+  logger->tinc(l_bluefs_read_lat, mono_clock::now() - t0);
+  return ret;
+}
+
 int64_t BlueFS::_read(
   FileReader *h,         ///< [in] read from here
   uint64_t off,          ///< [in] offset
@@ -3432,6 +3602,12 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   ceph_assert(h->file->num_readers.load() == 0);
   ceph_assert(h->file->fnode.ino > 1);
 
+  uint64_t envelope_size = length;
+  if (h->file->is_wal) {
+    envelope_size = length + (sizeof(uint64_t) * 2); // length + file id
+  }
+  uint64_t end = offset + envelope_size;
+
   dout(10) << __func__ << " " << h << " pos 0x" << std::hex << h->pos
 	   << " 0x" << offset << "~" << length << std::dec
 	   << " to " << h->file->fnode
@@ -3444,9 +3620,11 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
 
   bool buffered = cct->_conf->bluefs_buffered_io;
 
-  if (offset + length <= h->pos)
+  if (end <= h->pos)
     return 0;
   if (offset < h->pos) {
+    // NOTE: let's assume that we do not overwrite wal
+    ceph_assert(!h->file->is_wal);
     length -= h->pos - offset;
     offset = h->pos;
     dout(10) << " still need 0x"
@@ -3459,11 +3637,11 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   uint64_t allocated = h->file->fnode.get_allocated();
   // do not bother to dirty the file if we are overwriting
   // previously allocated extents.
-  if (allocated < offset + length) {
+  if (allocated < end) {
     // we should never run out of log space here; see the min runway check
     // in _flush_and_sync_log.
     int r = _allocate(vselector->select_prefer_bdev(h->file->vselector_hint),
-		      offset + length - allocated,
+		      end - allocated,
                       0,
 		      &h->file->fnode,
 		      [&](const bluefs_extent_t& e) {
@@ -3478,11 +3656,21 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
     }
     h->file->is_dirty = true;
   }
-  if (h->file->fnode.size < offset + length) {
-    vselector->add_usage(h->file->vselector_hint, offset + length - h->file->fnode.size);
-    h->file->fnode.size = offset + length;
-    h->file->is_dirty = true;
+  if (h->file->fnode.size < end) {
+    vselector->add_usage(h->file->vselector_hint, end - h->file->fnode.size);
+    h->file->fnode.size = end - sizeof(uint64_t)*2; // do not include envelope in size
+    // new write path for wal does not require dirtying file on append
+    if (!h->file->is_wal) {
+      h->file->is_dirty = true;
+    }
   }
+
+  if (h->file->is_wal) {
+    // create WAL flush envelope 
+    h->prepend(length);
+    h->append(h->file->fnode.ino);
+  } 
+
   dout(20) << __func__ << " file now, unflushed " << h->file->fnode << dendl;
   int res = _flush_data(h, offset, length, buffered);
   logger->tinc(l_bluefs_flush_lat, mono_clock::now() - t0);
@@ -4100,6 +4288,9 @@ int BlueFS::open_for_write(
     file = ceph::make_ref<File>();
     file->fnode.ino = ++ino_last;
     file->vselector_hint = vselector->get_hint_by_dir(dirname);
+    if (boost::algorithm::ends_with(filename, ".log")) {
+      file->is_wal = true;
+    }
     nodes.file_map[ino_last] = file;
     dir->file_map.emplace_hint(q, string{filename}, file);
     ++file->refs;
@@ -4239,6 +4430,9 @@ int BlueFS::open_for_read(
     return -ENOENT;
   }
   File *file = q->second.get();
+  if (boost::algorithm::ends_with(filename, ".log")) {
+    ceph_assert(file->is_wal);
+  }
 
   *h = new FileReader(file, random ? 4096 : cct->_conf->bluefs_max_prefetch,
 		      random, false);

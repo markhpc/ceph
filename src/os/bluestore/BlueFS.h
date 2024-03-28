@@ -241,6 +241,7 @@ public:
     bool locked;
     bool deleted;
     bool is_dirty;
+    bool is_wal;
     boost::intrusive::list_member_hook<> dirty_item;
 
     std::atomic_int num_readers, num_writers;
@@ -262,6 +263,7 @@ public:
 	locked(false),
 	deleted(false),
 	is_dirty(false),
+        is_wal(false),
 	num_readers(0),
 	num_writers(0),
 	num_reading(0),
@@ -361,6 +363,19 @@ public:
       uint64_t l0 = get_buffer_length();
       ceph_assert(l0 + len <= std::numeric_limits<unsigned>::max());
       buffer_appender.append_zero(len);
+    }
+
+    void append(uint64_t value) {
+      uint64_t l0 = get_buffer_length();
+      ceph_assert(l0 + sizeof(value) <= std::numeric_limits<unsigned>::max());
+      buffer_appender.append((const char*)&value, sizeof(value));
+    }
+
+    void prepend(uint64_t value) {
+      bufferlist tail;
+      tail.append((const char*)&value, sizeof(value));
+      tail.claim_append(buffer);
+      std::swap(tail, buffer);
     }
 
     uint64_t get_effective_write_pos() {
@@ -605,6 +620,12 @@ private:
   int _preallocate(FileRef f, uint64_t off, uint64_t len);
   int _truncate(FileWriter *h, uint64_t off);
 
+  int64_t _read_wal(
+    FileReader *h,   ///< [in] read from here
+    uint64_t offset, ///< [in] offset
+    size_t len,      ///< [in] this many bytes
+    ceph::buffer::list *outbl,   ///< [out] optional: reference the result here
+    char *out);      ///< [out] optional: or copy it here
   int64_t _read(
     FileReader *h,   ///< [in] read from here
     uint64_t offset, ///< [in] offset
@@ -757,6 +778,9 @@ public:
     // no need to hold the global lock here; we only touch h and
     // h->file, and read vs write or delete is already protected (via
     // atomics and asserts).
+    if (h->file->is_wal) {
+      return _read_wal(h, offset, len, outbl, out);
+    }
     return _read(h, offset, len, outbl, out);
   }
   int64_t read_random(FileReader *h, uint64_t offset, size_t len,
