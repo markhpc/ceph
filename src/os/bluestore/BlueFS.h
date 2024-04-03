@@ -242,6 +242,10 @@ public:
     bool deleted;
     bool is_dirty;
     bool is_wal;
+    uint32_t wal_flush_count = 0; // to keep track of the amount of flushes we performed on a WAL file
+                                  // so that we can easily recalculate real data offsets.
+                                  // On "replay" this should be refilled in order to append data
+                                  // correctly. Nevertheless, replayed wal file most probably won't be reused.
     boost::intrusive::list_member_hook<> dirty_item;
 
     std::atomic_int num_readers, num_writers;

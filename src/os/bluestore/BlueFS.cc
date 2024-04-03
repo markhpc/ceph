@@ -3614,11 +3614,12 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   ceph_assert(h->file->num_readers.load() == 0);
   ceph_assert(h->file->fnode.ino > 1);
 
-  uint64_t envelope_size = length;
   if (h->file->is_wal) {
-    envelope_size = length + (sizeof(uint64_t) * 2); // length + file id
+    // translate offset
+    offset += sizeof(uint64_t) * 2 * h->file->wal_flush_count;
+    length += sizeof(uint64_t) * 2;
   }
-  uint64_t end = offset + envelope_size;
+  uint64_t end = offset + length;
 
   dout(10) << __func__ << " " << h << " pos 0x" << std::hex << h->pos
 	   << " 0x" << offset << "~" << length << std::dec
@@ -3670,7 +3671,7 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   }
   if (h->file->fnode.size < end) {
     vselector->add_usage(h->file->vselector_hint, end - h->file->fnode.size);
-    h->file->fnode.size = end - sizeof(uint64_t)*2; // do not include envelope in size
+    h->file->fnode.size = end;
     // new write path for wal does not require dirtying file on append
     if (!h->file->is_wal) {
       h->file->is_dirty = true;
@@ -3679,13 +3680,14 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
 
   if (h->file->is_wal) {
     // create WAL flush envelope 
-    h->prepend(length);
+    h->prepend(length - sizeof(uint64_t) * 2);
     h->append(h->file->fnode.ino);
+    h->file->wal_flush_count++;
   } 
 
   dout(20) << __func__ << " file now, unflushed " << h->file->fnode << dendl;
   // TODO(pere): fix offset to real offset after adding all flush sizes
-  int res = _flush_data(h, offset, envelope_size, buffered);
+  int res = _flush_data(h, offset, length, buffered);
   logger->tinc(l_bluefs_flush_lat, mono_clock::now() - t0);
   return res;
 }
