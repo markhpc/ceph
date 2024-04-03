@@ -915,7 +915,7 @@ static bool bl_eq(bufferlist& expected, bufferlist& actual) {
   return false;
 }
 
-TEST(BlueFS, test_write_wal) {
+TEST(BlueFS, test_wal_write) {
   uint64_t size_wal = 1048576 * 64;
   TempBdev bdev_wal{size_wal};
   uint64_t size_db = 1048576 * 128;
@@ -945,11 +945,14 @@ TEST(BlueFS, test_write_wal) {
   ASSERT_NE(nullptr, writer);
 
   bufferlist bl1;
-  std::unique_ptr<char[]> buf1 = gen_buffer(70000);
-  bufferptr bp1 = buffer::claim_char(70000, buf1.get());
-  bl1.push_back(bp1);
+  auto gen_debugable = [](size_t amount, bufferlist& bl) {
+    for (size_t i = 0; i < amount; i++) {
+      bl.append('a');
+    }
+  };
+  gen_debugable(70000, bl1);
   writer->append(bl1.c_str(), bl1.length());
-  fs.flush(writer);
+  fs.fsync(writer);
 
   BlueFS::FileReader *reader;
   ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
@@ -957,6 +960,45 @@ TEST(BlueFS, test_write_wal) {
   fs.read(reader, 0, 70000, &read_bl, NULL);
   ASSERT_TRUE(bl_eq(bl1, read_bl));
   fs.umount();
+}
+
+TEST(BlueFS, test_wal_prepend) {
+  uint64_t size = 1048576 * 128;
+  TempBdev bdev{size};
+  BlueFS fs(g_ceph_context);
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_DB, bdev.path, false));
+  uuid_d fsid;
+  ASSERT_EQ(0, fs.mkfs(fsid, { BlueFS::BDEV_DB, false, false }));
+  ASSERT_EQ(0, fs.mount());
+  ASSERT_EQ(0, fs.maybe_verify_layout({ BlueFS::BDEV_DB, false, false }));
+  auto gen_debugable = [](size_t amount, bufferlist& bl) {
+    for (size_t i = 0; i < amount; i++) {
+      bl.append('a');
+    }
+  };
+  bufferlist bl, bl2;
+  uint64_t flush_size = 70000; 
+  gen_debugable(flush_size, bl);
+  bl2.substr_of(bl, 0, flush_size); // copy to append to expected bufferlist
+  {
+    BlueFS::FileWriter *h;
+    ASSERT_EQ(0, fs.mkdir("dir"));
+    ASSERT_EQ(0, fs.open_for_write("dir", "file", &h, false));
+    uint64_t ino = h->file->fnode.ino;
+    h->append(bl);
+    h->prepend(flush_size);
+    h->append(ino);
+
+    bufferlist expected;
+    expected.append((const char*)&flush_size, sizeof(flush_size));
+    expected.append(bl2); // use bl2 because bl is claimed inside FileWriter::append
+    expected.append((const char*)&ino, sizeof(ino));
+
+    ASSERT_TRUE(bl_eq(expected, h->buffer));
+
+    fs.fsync(h);
+    fs.close_writer(h);
+  }
 }
 
 TEST(BlueFS, test_truncate_stable_53129) {
