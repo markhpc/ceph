@@ -2310,9 +2310,9 @@ int64_t BlueFS::_read_wal(
     uint64_t flush_length = *((uint64_t*)buf->bl.c_str());
     dout(2) << __func__ << " flush_length " << flush_length << dendl;
     // check if we start reading from this chunk of flush
-    bool in_range = off >= wal_data_logical_offset && off < wal_data_logical_offset + flush_length;
+    bool in_range = wal_data_logical_offset >= off && wal_data_logical_offset < off + len;
     if (!in_range) {
-      if (off < wal_data_logical_offset) {
+      if  (wal_data_logical_offset < off) {
         // move to next flush
         // TODO(pere): do we check "ino" here too?
         wal_data_logical_offset += flush_length;
@@ -2329,12 +2329,12 @@ int64_t BlueFS::_read_wal(
     flush_offset += sizeof(uint64_t);
 
 
-    uint64_t data_to_read_from_flush = flush_length;
+    uint64_t data_to_read_from_flush = std::min(flush_length, remaining_len);
     while (data_to_read_from_flush > 0) {
       uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
       if (data_left_on_buffer > 0) {
         // read data from buffer
-        uint64_t amount_to_copy = std::min(remaining_len, data_left_on_buffer);
+        uint64_t amount_to_copy = std::min(data_to_read_from_flush, data_left_on_buffer);
         if (outbl) {
           bufferlist t;
           t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
@@ -2357,6 +2357,18 @@ int64_t BlueFS::_read_wal(
     ret += flush_length;
 
     // TODO(pere): check marker
+    //
+    {
+      uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
+      ceph_assert(data_left_on_buffer >= sizeof(uint64_t));
+      bufferlist t;
+      t.substr_of(buf->bl, flush_offset - buf->bl_off, sizeof(uint64_t));
+      uint64_t marker = *((uint64_t*)t.c_str());
+      dout(2) << "buffer dump\n";
+      buf->bl.hexdump(*_dout);
+      *_dout << dendl;
+      ceph_assert(marker == h->file->fnode.ino);
+    }
     
     // TODO(pere): is this any useful?
     // we are in range, copy all flush data
@@ -3672,7 +3684,8 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   } 
 
   dout(20) << __func__ << " file now, unflushed " << h->file->fnode << dendl;
-  int res = _flush_data(h, offset, length, buffered);
+  // TODO(pere): fix offset to real offset after adding all flush sizes
+  int res = _flush_data(h, offset, envelope_size, buffered);
   logger->tinc(l_bluefs_flush_lat, mono_clock::now() - t0);
   return res;
 }

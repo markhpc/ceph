@@ -301,8 +301,8 @@ public:
 
     FileRef file;
     uint64_t pos = 0;       ///< start offset for buffer
-  private:
     ceph::buffer::list buffer;      ///< new data to write (at end of file)
+  private:
     ceph::buffer::list tail_block;  ///< existing partial block at end of file, if any
   public:
     unsigned get_buffer_length() const {
