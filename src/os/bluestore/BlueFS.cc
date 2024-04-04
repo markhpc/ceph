@@ -2285,7 +2285,8 @@ int64_t BlueFS::_read_wal(
     size_t left;
     // NOTE: we start reading from 0 always, not from offset per se
     uint64_t x_off = 0;
-    auto p = h->file->fnode.seek(flush_offset, &x_off);
+    uint64_t read_offset = p2align(flush_offset, super.block_mask());
+    auto p = h->file->fnode.seek(read_offset, &x_off);
     if (p == h->file->fnode.extents.end()) {
       dout(5) << __func__ << " reading less then required "
         << ret << "<" << ret + len << dendl;
@@ -2345,7 +2346,8 @@ int64_t BlueFS::_read_wal(
 
       } else {
         // load data from disk
-        auto p = h->file->fnode.seek(flush_offset, &x_off);
+        uint64_t read_offset = p2align(flush_offset, super.block_mask());
+        auto p = h->file->fnode.seek(read_offset, &x_off);
         int r = _bdev_read(p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf->bl, ioc[p->bdev],
             false);
         ceph_assert(r == 0);
@@ -3615,8 +3617,7 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   ceph_assert(h->file->fnode.ino > 1);
 
   if (h->file->is_wal) {
-    // translate offset
-    offset += sizeof(uint64_t) * 2 * h->file->wal_flush_count;
+    // update length, offset is already updated with correct position
     length += sizeof(uint64_t) * 2;
   }
   uint64_t end = offset + length;
@@ -3686,7 +3687,6 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   } 
 
   dout(20) << __func__ << " file now, unflushed " << h->file->fnode << dendl;
-  // TODO(pere): fix offset to real offset after adding all flush sizes
   int res = _flush_data(h, offset, length, buffered);
   logger->tinc(l_bluefs_flush_lat, mono_clock::now() - t0);
   return res;
