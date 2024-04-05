@@ -2285,8 +2285,9 @@ int64_t BlueFS::_read_wal(
     size_t left;
     // NOTE: we start reading from 0 always, not from offset per se
     uint64_t x_off = 0;
-    uint64_t read_offset = p2align(flush_offset, super.block_mask());
-    auto p = h->file->fnode.seek(read_offset, &x_off);
+    buf->bl.clear();
+    buf->bl_off = p2align(flush_offset, (uint64_t)super.block_size);
+    auto p = h->file->fnode.seek(buf->bl_off, &x_off);
     if (p == h->file->fnode.extents.end()) {
       dout(5) << __func__ << " reading less then required "
         << ret << "<" << ret + len << dendl;
@@ -2308,7 +2309,17 @@ int64_t BlueFS::_read_wal(
       ceph_assert(r == 0);
     }
 
-    uint64_t flush_length = *((uint64_t*)buf->bl.c_str());
+    uint64_t flush_length = 0;
+    {
+      uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
+      ceph_assert(data_left_on_buffer >= sizeof(uint64_t));
+      bufferlist t;
+      t.substr_of(buf->bl, flush_offset - buf->bl_off, sizeof(uint64_t));
+      dout(2) << "length dump\n";
+      t.hexdump(*_dout);
+      *_dout << dendl;
+      flush_length = *((uint64_t*)t.c_str());
+    }
     dout(2) << __func__ << " flush_length " << flush_length << dendl;
     // check if we start reading from this chunk of flush
     bool in_range = wal_data_logical_offset >= off && wal_data_logical_offset < off + len;
@@ -2317,7 +2328,7 @@ int64_t BlueFS::_read_wal(
         // move to next flush
         // TODO(pere): do we check "ino" here too?
         wal_data_logical_offset += flush_length;
-        flush_offset += sizeof(uint64_t)*2 + flush_length;
+        flush_offset += (sizeof(uint64_t)*2) + flush_length;
         continue;
       }
       // we can't read more
@@ -2346,8 +2357,9 @@ int64_t BlueFS::_read_wal(
 
       } else {
         // load data from disk
-        uint64_t read_offset = p2align(flush_offset, super.block_mask());
-        auto p = h->file->fnode.seek(read_offset, &x_off);
+        buf->bl.clear();
+        buf->bl_off = p2align(flush_offset, (uint64_t)super.block_size);
+        auto p = h->file->fnode.seek(buf->bl_off, &x_off);
         int r = _bdev_read(p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf->bl, ioc[p->bdev],
             false);
         ceph_assert(r == 0);
@@ -2369,8 +2381,10 @@ int64_t BlueFS::_read_wal(
       dout(2) << "buffer dump\n";
       buf->bl.hexdump(*_dout);
       *_dout << dendl;
+      dout(20) << "marker " << marker << " " << h->file->fnode.ino << dendl;
       ceph_assert(marker == h->file->fnode.ino);
     }
+    flush_offset += sizeof(uint64_t);
     
     // TODO(pere): is this any useful?
     // we are in range, copy all flush data
@@ -3542,12 +3556,21 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
     dout(20) << " leaving 0x" << std::hex << buffer.length() << std::dec
              << " unflushed" << dendl;
   }
+  uint64_t extra_if_wal = 0;
+  if (file->is_wal && bl.length() >= sizeof(uint64_t)) {
+    extra_if_wal = sizeof(uint64_t);
+  }
+  // last block is cached just in case :)
+  // we have tail and padding_len
+  // tail: length % block_size
+  // padding_len: block_size = tail + padding_len 
   if (const unsigned tail = bl.length() & ~super.block_mask(); tail) {
     const auto padding_len = super.block_size - tail;
     dout(20) << __func__ << " caching tail of 0x"
              << std::hex << tail
              << " and padding block with 0x" << padding_len
              << " buffer.length() " << buffer.length()
+             << " extra from wal " << extra_if_wal
              << std::dec << dendl;
     // We need to go through the `buffer_appender` to get a chance to
     // preserve in-memory contiguity and not mess with the alignment.
@@ -3561,7 +3584,13 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
     // padding on a dedicated, 4 KB long memory chunk. This shouldn't
     // trigger the rebuild while still being less expensive.
     buffer_appender.substr_of(bl, bl.length() - padding_len - tail, tail);
-    buffer.splice(buffer.length() - tail, tail, &tail_block);
+
+    // If we are writing to WAL we want to keep everything except the extra zeros added to the end
+    // hence extra_if_wal accounts for the amount of zeroes at the end
+    buffer.splice(buffer.length() - tail, tail - extra_if_wal, &tail_block);
+    if (extra_if_wal) { // remove extra zeros from the end
+      buffer.splice(buffer.length() - extra_if_wal, extra_if_wal, nullptr);
+    }
   } else {
     tail_block.clear();
   }
@@ -3618,7 +3647,7 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
 
   if (h->file->is_wal) {
     // update length, offset is already updated with correct position
-    length += sizeof(uint64_t) * 2;
+    length += sizeof(uint64_t) * 3;
   }
   uint64_t end = offset + length;
 
@@ -3673,6 +3702,9 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   if (h->file->fnode.size < end) {
     vselector->add_usage(h->file->vselector_hint, end - h->file->fnode.size);
     h->file->fnode.size = end;
+    if (h->file->is_wal) {
+      h->file->fnode.size -= sizeof(uint64_t); // don't account extra 0 appended at the end
+    }
     // new write path for wal does not require dirtying file on append
     if (!h->file->is_wal) {
       h->file->is_dirty = true;
@@ -3681,8 +3713,9 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
 
   if (h->file->is_wal) {
     // create WAL flush envelope 
-    h->prepend(length - sizeof(uint64_t) * 2);
+    h->prepend(length - sizeof(uint64_t) * 3);
     h->append(h->file->fnode.ino);
+    h->append_zero(sizeof(uint64_t));
     h->file->wal_flush_count++;
   } 
 
@@ -3722,6 +3755,10 @@ int BlueFS::_flush_data(FileWriter *h, uint64_t offset, uint64_t length, bool bu
   auto bl = h->flush_buffer(cct, partial, length, super);
   ceph_assert(bl.length() >= length);
   h->pos = offset + length;
+  if (h->file->is_wal) {
+    h->pos -= sizeof(uint64_t); // wal files overwrite next flush_size field
+                                // we don't need to account it as those 8 bytes aren't really written
+  }
   length = bl.length();
 
   logger->inc(l_bluefs_write_count, 1);
@@ -3775,6 +3812,7 @@ int BlueFS::_flush_data(FileWriter *h, uint64_t offset, uint64_t length, bool bu
       }
     }
   }
+
   dout(20) << __func__ << " h " << h << " pos now 0x"
            << std::hex << h->pos << std::dec << dendl;
   return 0;
@@ -4446,7 +4484,7 @@ int BlueFS::open_for_read(
   }
   File *file = q->second.get();
   if (boost::algorithm::ends_with(filename, ".log")) {
-    ceph_assert(file->is_wal);
+    file->is_wal = true;
   }
 
   *h = new FileReader(file, random ? 4096 : cct->_conf->bluefs_max_prefetch,
