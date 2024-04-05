@@ -1518,6 +1518,12 @@ int BlueFS::_replay(bool noop, bool to_stdout)
               vselector->get_hint_by_dir(dirname);
             vselector->add_usage(file->vselector_hint, file->fnode);
 
+            if (boost::algorithm::ends_with(filename, ".log")) {
+              file->is_wal = true;
+              file->fnode.size = 0;
+              file->wal_flush_count = 0;
+            }
+
 	    q->second->file_map[filename] = file;
 	    ++file->refs;
 	  }
@@ -1663,7 +1669,11 @@ int BlueFS::_replay(bool noop, bool to_stdout)
 	    if (fnode.ino != 1) {
 	      vselector->sub_usage(f->vselector_hint, fnode);
 	    }
-	    fnode.size = delta.size;
+            if (f->is_wal) {
+              _wal_update_size(f); // fnode.allocate must be updated
+            } else {
+              fnode.size = delta.size;
+            }
 	    fnode.claim_extents(delta.extents);
 	    dout(20) << __func__ << " 0x" << std::hex << pos << std::dec
 		     << ":  op_file_update_inc produced " << " " << fnode << " " << dendl;
@@ -2229,6 +2239,61 @@ int64_t BlueFS::_read_random(
   return ret;
 }
 
+void BlueFS::_wal_update_size(FileRef file) {
+  uint64_t current_size = file->fnode.size;
+  uint64_t flush_offset = current_size;
+
+  FileReaderBuffer buf(super.block_size);
+
+  uint64_t x_off = 0;
+  uint64_t ret = 0;
+  
+
+  while(flush_offset < file->fnode.allocated) {
+    // read first part of wal flush
+    {
+      buf.bl.clear();
+      buf.bl_off = p2align(flush_offset, (uint64_t)super.block_size);
+      auto p = file->fnode.seek(buf.bl_off, &x_off);
+      if (p == file->fnode.extents.end()) {
+        dout(5) << __func__ << " reading less then required "
+          << ret << "<" << ret << dendl;
+        break;
+      }
+      int r;
+      // TODO(pere): read extent length or max read size conf
+      if (!cct->_conf->bluefs_check_for_zeros) {
+        r = _bdev_read(p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf.bl, ioc[p->bdev],
+            false);
+      } else {
+        r = _read_and_check(
+            p->bdev, p->offset + x_off, p->offset + p->length - x_off, &buf.bl, ioc[p->bdev],
+            false);
+      }
+      ceph_assert(r == 0);
+      uint64_t flush_length = 0;
+      uint64_t data_left_on_buffer = buf.get_buf_remaining(flush_offset);
+      ceph_assert(data_left_on_buffer >= sizeof(uint64_t));
+      bufferlist t;
+      t.substr_of(buf.bl, flush_offset - buf.bl_off, sizeof(uint64_t));
+      dout(2) << "length dump\n";
+      t.hexdump(*_dout);
+      *_dout << dendl;
+      flush_length = *((uint64_t*)t.c_str());
+      dout(2) << __func__ << " flush_length " << flush_length << dendl;
+
+      if (flush_length == 0) {
+        dout(5) << __func__ << " flush end reached " << dendl;
+        break;
+      }
+
+      uint64_t increase = flush_length+(sizeof(uint64_t)*2);
+      file->fnode.size += increase;
+      flush_offset += increase;
+    }
+  }
+}
+
 int64_t BlueFS::_read_wal(
   FileReader *h,         ///< [in] read from here
   uint64_t off,          ///< [in] offset
@@ -2321,6 +2386,13 @@ int64_t BlueFS::_read_wal(
       flush_length = *((uint64_t*)t.c_str());
     }
     dout(2) << __func__ << " flush_length " << flush_length << dendl;
+    if (flush_length == 0) {
+      if (remaining_len > 0) {
+        dout(5) << __func__ << " reading less then required "
+          << ret << "<" << ret + len << dendl;
+      }
+      break;
+    }
     // check if we start reading from this chunk of flush
     bool in_range = wal_data_logical_offset >= off && wal_data_logical_offset < off + len;
     if (!in_range) {
@@ -4610,6 +4682,9 @@ int BlueFS::stat(std::string_view dirname, std::string_view filename,
 	   << " " << file->fnode << dendl;
   if (size)
     *size = file->fnode.size;
+  if (file->is_wal) {
+    *size = file->fnode.size - (file->wal_flush_count * sizeof(uint64_t) * 2);
+  }
   if (mtime)
     *mtime = file->fnode.mtime;
   return 0;

@@ -382,6 +382,11 @@ public:
       std::swap(tail, buffer);
     }
 
+    void remove_trailing(uint64_t amount) {
+      bufferlist bl;
+      bl.substr_of(buffer, 0, buffer.length() - amount);
+    }
+
     uint64_t get_effective_write_pos() {
       return pos + buffer.length();
     }
@@ -623,6 +628,8 @@ private:
 
   int _preallocate(FileRef f, uint64_t off, uint64_t len);
   int _truncate(FileWriter *h, uint64_t off);
+
+  void _wal_update_size(FileRef file);
 
   int64_t _read_wal(
     FileReader *h,   ///< [in] read from here
