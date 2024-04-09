@@ -1669,12 +1669,12 @@ int BlueFS::_replay(bool noop, bool to_stdout)
 	    if (fnode.ino != 1) {
 	      vselector->sub_usage(f->vselector_hint, fnode);
 	    }
+	    fnode.claim_extents(delta.extents);
             if (f->is_wal) {
               _wal_update_size(f); // fnode.allocate must be updated
             } else {
               fnode.size = delta.size;
             }
-	    fnode.claim_extents(delta.extents);
 	    dout(20) << __func__ << " 0x" << std::hex << pos << std::dec
 		     << ":  op_file_update_inc produced " << " " << fnode << " " << dendl;
 
@@ -2286,10 +2286,12 @@ void BlueFS::_wal_update_size(FileRef file) {
         dout(5) << __func__ << " flush end reached " << dendl;
         break;
       }
+      // TODO(pere): increase size of file->wal_flush_count 
 
       uint64_t increase = flush_length+(sizeof(uint64_t)*2);
       file->fnode.size += increase;
       flush_offset += increase;
+      file->wal_flush_count++;
     }
   }
 }
@@ -2355,7 +2357,7 @@ int64_t BlueFS::_read_wal(
     auto p = h->file->fnode.seek(buf->bl_off, &x_off);
     if (p == h->file->fnode.extents.end()) {
       dout(5) << __func__ << " reading less then required "
-        << ret << "<" << ret + len << dendl;
+        << ret << "<" << len - ret << dendl;
       break;
     }
 
@@ -2386,10 +2388,12 @@ int64_t BlueFS::_read_wal(
       flush_length = *((uint64_t*)t.c_str());
     }
     dout(2) << __func__ << " flush_length " << flush_length << dendl;
+    dout(2) << __func__ << " flush_offset " << flush_offset << dendl;
+
     if (flush_length == 0) {
       if (remaining_len > 0) {
         dout(5) << __func__ << " reading less then required "
-          << ret << "<" << ret + len << dendl;
+          << ret << "<" << len - ret << dendl;
       }
       break;
     }
@@ -2404,16 +2408,18 @@ int64_t BlueFS::_read_wal(
         continue;
       }
       // we can't read more
-      dout(5) << __func__ << " reading less then required "
-        << ret << "<" << ret + len << dendl;
+      dout(5) << __func__ << " flush_length 0: reading less then required "
+        << ret << "<" << len - ret << dendl;
       break;
 
     }
 
     flush_offset += sizeof(uint64_t);
+    dout(2) << __func__ << " after getting flush flush_offset " << flush_offset << dendl;
 
 
     uint64_t data_to_read_from_flush = std::min(flush_length, remaining_len);
+    uint64_t data_processed_from_flush = 0;
     while (data_to_read_from_flush > 0) {
       uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
       if (data_left_on_buffer > 0) {
@@ -2424,7 +2430,15 @@ int64_t BlueFS::_read_wal(
           t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
           outbl->claim_append(t);
         }
+
+        if (out) {
+          auto p = buf->bl.begin();
+          p.seek(flush_offset - buf->bl_off);
+          p.copy(amount_to_copy, out);
+          out += amount_to_copy;
+        }
         flush_offset += amount_to_copy;
+        data_processed_from_flush += amount_to_copy;
         data_to_read_from_flush -= amount_to_copy;
 
       } else {
@@ -2438,9 +2452,9 @@ int64_t BlueFS::_read_wal(
       }
 
     }
-    remaining_len -= flush_length;
-    wal_data_logical_offset += flush_length;
-    ret += flush_length;
+    // advance in case of partial read to flush so that we can read marker correctly
+    flush_offset += flush_length - data_processed_from_flush;
+    dout(2) << __func__ << " after getting flush data flush_offset " << flush_offset << dendl;
 
     // TODO(pere): check marker
     //
@@ -2457,6 +2471,10 @@ int64_t BlueFS::_read_wal(
       ceph_assert(marker == h->file->fnode.ino);
     }
     flush_offset += sizeof(uint64_t);
+
+    remaining_len -= flush_length;
+    wal_data_logical_offset += flush_length;
+    ret += flush_length;
     
     // TODO(pere): is this any useful?
     // we are in range, copy all flush data
