@@ -1015,6 +1015,62 @@ TEST(BlueFS, test_wal_write_multiple) {
   fs.umount();
 }
 
+TEST(BlueFS, test_wal_write_multiple_recover) {
+  uint64_t size_wal = 1048576 * 64;
+  TempBdev bdev_wal{size_wal};
+  uint64_t size_db = 1048576 * 128;
+  TempBdev bdev_db{size_db};
+  uint64_t size_slow = 1048576 * 256;
+  TempBdev bdev_slow{size_slow};
+
+  ConfSaver conf(g_ceph_context->_conf);
+  conf.SetVal("bluefs_min_flush_size", "65536");
+  conf.ApplyChanges();
+
+  BlueFS fs(g_ceph_context);
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_WAL,  bdev_wal.path,  false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_DB,   bdev_db.path,   false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_SLOW, bdev_slow.path, false));
+  uuid_d fsid;
+  ASSERT_EQ(0, fs.mkfs(fsid, { BlueFS::BDEV_DB, true, true }));
+  ASSERT_EQ(0, fs.mount());
+  ASSERT_EQ(0, fs.maybe_verify_layout({ BlueFS::BDEV_DB, true, true }));
+
+  string dir_db = "db.wal";
+  ASSERT_EQ(0, fs.mkdir(dir_db));
+
+  string wal_file = "wal1.log";
+  BlueFS::FileWriter *writer;
+  ASSERT_EQ(0, fs.open_for_write(dir_db, wal_file, &writer, false));
+  ASSERT_NE(nullptr, writer);
+
+  auto gen_debugable = [](size_t amount, bufferlist& bl, char c) {
+    for (size_t i = 0; i < amount; i++) {
+      bl.append(c);
+    }
+  };
+  size_t buffer_size = 70000;
+  uint64_t flush_count = 10;
+  for (int i = 0; i < 10; i++) {
+    bufferlist bl1;
+    gen_debugable(buffer_size, bl1, 'a' + i);
+    writer->append(bl1.c_str(), bl1.length());
+    fs.fsync(writer);
+  }
+  fs.close_writer(writer);
+
+  fs.umount();
+  fs.mount();
+
+  uint64_t size = 0;
+
+  BlueFS::FileReader *reader;
+  ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
+  fs.stat(dir_db, wal_file, &size, nullptr);
+  ASSERT_EQ(reader->file->wal_flush_count, flush_count);
+  ASSERT_EQ(size, 70000  * flush_count);
+}
+
 TEST(BlueFS, test_wal_prepend) {
   uint64_t size = 1048576 * 128;
   TempBdev bdev{size};
