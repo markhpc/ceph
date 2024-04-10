@@ -2356,7 +2356,7 @@ int64_t BlueFS::_read_wal(
     buf->bl_off = p2align(flush_offset, (uint64_t)super.block_size);
     auto p = h->file->fnode.seek(buf->bl_off, &x_off);
     if (p == h->file->fnode.extents.end()) {
-      dout(5) << __func__ << " reading less then required "
+      dout(5) << __func__ << " extent end: reading less then required "
         << ret << "<" << len - ret << dendl;
       break;
     }
@@ -2392,31 +2392,46 @@ int64_t BlueFS::_read_wal(
 
     if (flush_length == 0) {
       if (remaining_len > 0) {
-        dout(5) << __func__ << " reading less then required "
+        dout(5) << __func__ << " flush_length 0: reading less then required "
           << ret << "<" << len - ret << dendl;
       }
       break;
     }
+        // // apply deferred if overwrite breaks blob continuity only.
+        // // if it totally overlaps some pextent - fallback to regular write
+        // if (pext.offset < offset ||
+        //   pext.end() > offset + length) {
+
     // check if we start reading from this chunk of flush
-    bool in_range = wal_data_logical_offset >= off && wal_data_logical_offset < off + len;
+    // wal_data_logical_offset~min(remaining_len, flush_length)
+    // off~len
+    // bool overlaps = offset < b->end() && end > b->offset;
+    bool in_range = wal_data_logical_offset < off+len && wal_data_logical_offset+flush_length > off;
     if (!in_range) {
-      if  (wal_data_logical_offset < off) {
+      if  (off >= wal_data_logical_offset + flush_length) {
         // move to next flush
         // TODO(pere): do we check "ino" here too?
         wal_data_logical_offset += flush_length;
         flush_offset += (sizeof(uint64_t)*2) + flush_length;
         continue;
       }
-      // we can't read more
-      dout(5) << __func__ << " flush_length 0: reading less then required "
+      // we can't read more, this should happen?
+      dout(5) << __func__ << " unexpected not in range: reading less then required "
         << ret << "<" << len - ret << dendl;
       break;
 
     }
 
     flush_offset += sizeof(uint64_t);
-    dout(2) << __func__ << " after getting flush flush_offset " << flush_offset << dendl;
 
+    uint64_t skip_front = 0;
+    if(wal_data_logical_offset < off) { 
+      // offset is in this flush chunk so if we are before we move forward
+      skip_front = off - wal_data_logical_offset;
+    }
+    flush_offset += skip_front;
+
+    dout(2) << __func__ << " after getting flush flush_offset " << flush_offset << dendl;
 
     uint64_t data_to_read_from_flush = std::min(flush_length, remaining_len);
     uint64_t data_processed_from_flush = 0;
@@ -2425,6 +2440,14 @@ int64_t BlueFS::_read_wal(
       if (data_left_on_buffer > 0) {
         // read data from buffer
         uint64_t amount_to_copy = std::min(data_to_read_from_flush, data_left_on_buffer);
+        {
+          // debug
+          bufferlist t;
+          t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
+          dout(2) << "buffer read dump\n";
+          t.hexdump(*_dout);
+          *_dout << dendl;
+        }
         if (outbl) {
           bufferlist t;
           t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
@@ -2453,7 +2476,7 @@ int64_t BlueFS::_read_wal(
 
     }
     // advance in case of partial read to flush so that we can read marker correctly
-    flush_offset += flush_length - data_processed_from_flush;
+    flush_offset += flush_length - data_processed_from_flush - skip_front;
     dout(2) << __func__ << " after getting flush data flush_offset " << flush_offset << dendl;
 
     // TODO(pere): check marker
@@ -2472,41 +2495,12 @@ int64_t BlueFS::_read_wal(
     }
     flush_offset += sizeof(uint64_t);
 
-    remaining_len -= flush_length;
-    wal_data_logical_offset += flush_length;
-    ret += flush_length;
-    
-    // TODO(pere): is this any useful?
-    // we are in range, copy all flush data
-    // left = buf->get_buf_remaining(off);
-    // dout(20) << __func__ << " left 0x" << std::hex << left
-    //          << " len 0x" << len << std::dec << dendl;
-    //
-    // int64_t r = std::min(len, left);
-    // if (outbl) {
-    //   bufferlist t;
-    //   t.substr_of(buf->bl, off - buf->bl_off, r);
-    //   outbl->claim_append(t);
-    // }
-    // if (out) {
-    //   auto p = buf->bl.begin();
-    //   p.seek(off - buf->bl_off);
-    //   p.copy(r, out);
-    //   out += r;
-    // }
-    //
-    // dout(30) << __func__ << " result chunk (0x"
-    //          << std::hex << r << std::dec << " bytes):\n";
-    // bufferlist t;
-    // t.substr_of(buf->bl, off - buf->bl_off, r);
-    // t.hexdump(*_dout);
-    // *_dout << dendl;
-    //
-    // off += r;
-    // len -= r;
-    // ret += r;
-    // buf->pos += r;
+    ceph_assert(remaining_len >= data_processed_from_flush);
+    remaining_len -= data_processed_from_flush;
+    wal_data_logical_offset += data_processed_from_flush;
+    ret += data_processed_from_flush;
   }
+  buf->pos += ret;
 
   dout(20) << __func__ << std::hex
            << " got 0x" << ret
@@ -3802,6 +3796,9 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   }
 
   if (h->file->is_wal) {
+    dout(30) << "dump before appends:\n";
+    h->buffer.hexdump(*_dout);
+    *_dout << dendl;
     // create WAL flush envelope 
     h->prepend(length - sizeof(uint64_t) * 3);
     h->append(h->file->fnode.ino);
