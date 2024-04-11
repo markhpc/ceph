@@ -2276,7 +2276,7 @@ void BlueFS::_wal_update_size(FileRef file) {
       ceph_assert(data_left_on_buffer >= sizeof(uint64_t));
       bufferlist t;
       t.substr_of(buf.bl, flush_offset - buf.bl_off, sizeof(uint64_t));
-      dout(2) << "length dump\n";
+      dout(30) << "length dump\n";
       t.hexdump(*_dout);
       *_dout << dendl;
       flush_length = *((uint64_t*)t.c_str());
@@ -2382,7 +2382,7 @@ int64_t BlueFS::_read_wal(
       ceph_assert(data_left_on_buffer >= sizeof(uint64_t));
       bufferlist t;
       t.substr_of(buf->bl, flush_offset - buf->bl_off, sizeof(uint64_t));
-      dout(2) << "length dump\n";
+      dout(30) << "length dump\n";
       t.hexdump(*_dout);
       *_dout << dendl;
       flush_length = *((uint64_t*)t.c_str());
@@ -2397,15 +2397,7 @@ int64_t BlueFS::_read_wal(
       }
       break;
     }
-        // // apply deferred if overwrite breaks blob continuity only.
-        // // if it totally overlaps some pextent - fallback to regular write
-        // if (pext.offset < offset ||
-        //   pext.end() > offset + length) {
-
-    // check if we start reading from this chunk of flush
-    // wal_data_logical_offset~min(remaining_len, flush_length)
-    // off~len
-    // bool overlaps = offset < b->end() && end > b->offset;
+    // if we won't find offset here, go ahead
     bool in_range = wal_data_logical_offset < off+len && wal_data_logical_offset+flush_length > off;
     if (!in_range) {
       if  (off >= wal_data_logical_offset + flush_length) {
@@ -2430,10 +2422,12 @@ int64_t BlueFS::_read_wal(
       skip_front = off - wal_data_logical_offset;
     }
     flush_offset += skip_front;
+    wal_data_logical_offset += skip_front;
 
     dout(2) << __func__ << " after getting flush flush_offset " << flush_offset << dendl;
 
-    uint64_t data_to_read_from_flush = std::min(flush_length, remaining_len);
+    uint64_t data_to_read_from_flush = std::min(flush_length-skip_front, remaining_len);
+    dout(2) << __func__ << "  data_to_read_from_flush" << data_to_read_from_flush << dendl;
     uint64_t data_processed_from_flush = 0;
     while (data_to_read_from_flush > 0) {
       uint64_t data_left_on_buffer = buf->get_buf_remaining(flush_offset);
@@ -2444,7 +2438,7 @@ int64_t BlueFS::_read_wal(
           // debug
           bufferlist t;
           t.substr_of(buf->bl, flush_offset - buf->bl_off, amount_to_copy);
-          dout(2) << "buffer read dump\n";
+          dout(30) << "buffer read dump\n";
           t.hexdump(*_dout);
           *_dout << dendl;
         }
@@ -2487,7 +2481,7 @@ int64_t BlueFS::_read_wal(
       bufferlist t;
       t.substr_of(buf->bl, flush_offset - buf->bl_off, sizeof(uint64_t));
       uint64_t marker = *((uint64_t*)t.c_str());
-      dout(2) << "buffer dump\n";
+      dout(30) << "buffer dump\n";
       buf->bl.hexdump(*_dout);
       *_dout << dendl;
       dout(20) << "marker " << marker << " " << h->file->fnode.ino << dendl;
@@ -3641,13 +3635,9 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
              << " unflushed" << dendl;
   }
   uint64_t extra_if_wal = 0;
-  if (file->is_wal && bl.length() >= sizeof(uint64_t)) {
+  if (file->is_wal) {
     extra_if_wal = sizeof(uint64_t);
   }
-  // last block is cached just in case :)
-  // we have tail and padding_len
-  // tail: length % block_size
-  // padding_len: block_size = tail + padding_len 
   if (const unsigned tail = bl.length() & ~super.block_mask(); tail) {
     const auto padding_len = super.block_size - tail;
     dout(20) << __func__ << " caching tail of 0x"
@@ -3667,13 +3657,17 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
     // The alternative approach would be to place the entire tail and
     // padding on a dedicated, 4 KB long memory chunk. This shouldn't
     // trigger the rebuild while still being less expensive.
-    buffer_appender.substr_of(bl, bl.length() - padding_len - tail, tail);
 
     // If we are writing to WAL we want to keep everything except the extra zeros added to the end
     // hence extra_if_wal accounts for the amount of zeroes at the end
-    buffer.splice(buffer.length() - tail, tail - extra_if_wal, &tail_block);
-    if (extra_if_wal) { // remove extra zeros from the end
-      buffer.splice(buffer.length() - extra_if_wal, extra_if_wal, nullptr);
+    if (extra_if_wal) {
+      unsigned new_tail = (bl.length() - extra_if_wal - padding_len) & ~super.block_mask();
+      buffer_appender.substr_of(bl, bl.length() - padding_len - extra_if_wal - new_tail, new_tail);
+      buffer.splice(buffer.length() - new_tail, new_tail, &tail_block);
+      ceph_assert(buffer.length() == 0);
+    } else {
+      buffer_appender.substr_of(bl, bl.length() - padding_len - tail, tail);
+      buffer.splice(buffer.length() - tail, tail, &tail_block);
     }
   } else {
     tail_block.clear();
