@@ -1521,7 +1521,7 @@ int BlueFS::_replay(bool noop, bool to_stdout)
             if (boost::algorithm::ends_with(filename, ".log")) {
               file->is_wal = true;
               file->fnode.size = 0;
-              file->wal_flush_count = 0;
+              _wal_update_size(file);
             }
 
 	    q->second->file_map[filename] = file;
