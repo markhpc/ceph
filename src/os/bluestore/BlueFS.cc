@@ -3628,6 +3628,8 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
   if (partial) {
     tail_block.splice(0, tail_block.length(), &bl);
   }
+  dout(20) << __func__ << " tail is" << std::hex << bl.length() << dendl;
+  ceph_assert(length >= bl.length());
   const auto remaining_len = length - bl.length();
   buffer.splice(0, remaining_len, &bl);
   if (buffer.length()) {
