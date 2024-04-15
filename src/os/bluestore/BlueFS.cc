@@ -3640,8 +3640,13 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
   if (file->is_wal) {
     extra_if_wal = sizeof(uint64_t);
   }
-  if (const unsigned tail = bl.length() & ~super.block_mask(); tail) {
-    const auto padding_len = super.block_size - tail;
+  unsigned padding_len = 0;
+  // Append padding to fill block
+  ceph_assert(bl.length() >= extra_if_wal);
+  const unsigned tail = bl.length() & ~super.block_mask();
+  const unsigned wal_tail = (bl.length()-extra_if_wal) & ~super.block_mask(); // tail to save to tail_block in case of WAL file
+  if (tail) {
+    padding_len = super.block_size - tail;
     dout(20) << __func__ << " caching tail of 0x"
              << std::hex << tail
              << " and padding block with 0x" << padding_len
@@ -3653,26 +3658,25 @@ ceph::bufferlist BlueFS::FileWriter::flush_buffer(
     // Otherwise a costly rebuild could happen in e.g. `KernelDevice`.
     buffer_appender.append_zero(padding_len);
     buffer.splice(buffer.length() - padding_len, padding_len, &bl);
-    // Deep copy the tail here. This allows to avoid costlier copy on
-    // bufferlist rebuild in e.g. `KernelDevice` and minimizes number
-    // of memory allocations.
-    // The alternative approach would be to place the entire tail and
-    // padding on a dedicated, 4 KB long memory chunk. This shouldn't
-    // trigger the rebuild while still being less expensive.
-
-    // If we are writing to WAL we want to keep everything except the extra zeros added to the end
-    // hence extra_if_wal accounts for the amount of zeroes at the end
-    if (extra_if_wal) {
-      unsigned new_tail = (bl.length() - extra_if_wal - padding_len) & ~super.block_mask();
-      buffer_appender.substr_of(bl, bl.length() - padding_len - extra_if_wal - new_tail, new_tail);
-      buffer.splice(buffer.length() - new_tail, new_tail, &tail_block);
-      ceph_assert(buffer.length() == 0);
-    } else {
-      buffer_appender.substr_of(bl, bl.length() - padding_len - tail, tail);
-      buffer.splice(buffer.length() - tail, tail, &tail_block);
-    }
   } else {
     tail_block.clear();
+  }
+
+  // Deep copy the tail here. This allows to avoid costlier copy on
+  // bufferlist rebuild in e.g. `KernelDevice` and minimizes number
+  // of memory allocations.
+  // The alternative approach would be to place the entire tail and
+  // padding on a dedicated, 4 KB long memory chunk. This shouldn't
+  // trigger the rebuild while still being less expensive.
+  // If we are writing to WAL we want to keep everything except the extra zeros added to the end
+  // hence extra_if_wal accounts for the amount of zeroes at the end
+  if (extra_if_wal) {
+    buffer_appender.substr_of(bl, bl.length() - padding_len - extra_if_wal - wal_tail, wal_tail);
+    buffer.splice(buffer.length() - wal_tail, wal_tail, &tail_block);
+    ceph_assert(buffer.length() == 0);
+  } else {
+    buffer_appender.substr_of(bl, bl.length() - padding_len - tail, tail);
+    buffer.splice(buffer.length() - tail, tail, &tail_block);
   }
   return bl;
 }
