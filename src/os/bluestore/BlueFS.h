@@ -235,6 +235,32 @@ public:
   struct File : public RefCountedObject {
     MEMPOOL_CLASS_HELPERS();
 
+    struct WALFlush {
+      typedef uint64_t WALMarker; 
+      typedef uint64_t WALLength; 
+      typedef WALLength WALLengthZero; 
+
+      uint64_t offset = 0; // offset of start of flush, it should be length offset
+      WALLength length = 0;
+
+      WALFlush(uint64_t offset, uint64_t length) : offset(offset), length(length) {}
+
+      uint64_t get_marker_offset() {
+        return offset + sizeof(WALLength) + length;
+      }
+
+      uint64_t get_payload_offset() {
+        return offset + sizeof(WALLength);
+      }
+
+      static constexpr uint64_t write_extra_envelope_size() {
+        return sizeof(WALLength)  // prepended first length field
+          + sizeof(WALMarker) // appended file marker == ino
+          + sizeof(WALLengthZero); // extra 0 overwrite of next WALLength
+      }
+
+    };
+
     bluefs_fnode_t fnode;
     int refs;
     uint64_t dirty_seq;
@@ -242,10 +268,10 @@ public:
     bool deleted;
     bool is_dirty;
     bool is_wal;
-    uint32_t wal_flush_count = 0; // to keep track of the amount of flushes we performed on a WAL file
-                                  // so that we can easily recalculate real data offsets.
-                                  // On "replay" this should be refilled in order to append data
-                                  // correctly. Nevertheless, replayed wal file most probably won't be reused.
+    std::vector<WALFlush> wal_flushes; // to keep track of the amount of flushes we performed on a WAL file
+                                       // so that we can easily recalculate real data offsets.
+                                       // On "replay" this should be refilled in order to append data
+                                       // correctly. Nevertheless, replayed wal file most probably won't be reused.
     boost::intrusive::list_member_hook<> dirty_item;
 
     std::atomic_int num_readers, num_writers;
@@ -390,6 +416,7 @@ public:
     uint64_t get_effective_write_pos() {
       return pos + buffer.length();
     }
+
   };
 
   struct FileReaderBuffer {

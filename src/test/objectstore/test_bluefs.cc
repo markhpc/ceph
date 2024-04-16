@@ -1067,7 +1067,7 @@ TEST(BlueFS, test_wal_write_multiple_recover) {
   BlueFS::FileReader *reader;
   ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
   fs.stat(dir_db, wal_file, &size, nullptr);
-  ASSERT_EQ(reader->file->wal_flush_count, flush_count);
+  ASSERT_EQ(reader->file->wal_flushes.size(), flush_count);
   ASSERT_EQ(size, 70000  * flush_count);
   delete reader;
 }
@@ -1125,7 +1125,7 @@ TEST(BlueFS, test_wal_write_multiple_recover_fsync_end) {
     BlueFS::FileReader *reader;
     ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
     fs.stat(dir_db, wal_file, &size, nullptr);
-    ASSERT_EQ(reader->file->wal_flush_count, flush_count);
+    ASSERT_EQ(reader->file->wal_flushes.size(), flush_count);
     ASSERT_EQ(size, buffer_size * 10);
     delete reader;
   }
@@ -1211,7 +1211,7 @@ TEST(BlueFS, test_wal_read_2_partial) {
     BlueFS::FileReader *reader;
     ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
     fs.stat(dir_db, wal_file, &size, nullptr);
-    ASSERT_EQ(reader->file->wal_flush_count, flush_count);
+    ASSERT_EQ(reader->file->wal_flushes.size(), flush_count);
     ASSERT_EQ(size, total_size);
     delete reader;
   }
@@ -1226,7 +1226,91 @@ TEST(BlueFS, test_wal_read_2_partial) {
   chunk_contents.substr_of(contents, offset, length);
   ASSERT_TRUE(bl_eq(chunk_contents, read_bl));
   delete reader;
+}
 
+TEST(BlueFS, test_wal_read_2_partial_compact) {
+  uint64_t size_wal = 1048576 * 64;
+  TempBdev bdev_wal{size_wal};
+  uint64_t size_db = 1048576 * 128;
+  TempBdev bdev_db{size_db};
+  uint64_t size_slow = 1048576 * 256;
+  TempBdev bdev_slow{size_slow};
+
+  ConfSaver conf(g_ceph_context->_conf);
+  conf.SetVal("bluefs_min_flush_size", "65536");
+  conf.ApplyChanges();
+
+  BlueFS fs(g_ceph_context);
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_WAL,  bdev_wal.path,  false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_DB,   bdev_db.path,   false));
+  ASSERT_EQ(0, fs.add_block_device(BlueFS::BDEV_SLOW, bdev_slow.path, false));
+  uuid_d fsid;
+  ASSERT_EQ(0, fs.mkfs(fsid, { BlueFS::BDEV_DB, true, true }));
+  ASSERT_EQ(0, fs.mount());
+  ASSERT_EQ(0, fs.maybe_verify_layout({ BlueFS::BDEV_DB, true, true }));
+
+  string dir_db = "db.wal";
+  ASSERT_EQ(0, fs.mkdir(dir_db));
+
+
+  auto gen_debugable_alternating = [](size_t amount, bufferlist& bl, char c) {
+    for (size_t i = 0; i < amount; i++) {
+      bl.append(c + (rand() % 10));
+    }
+  };
+  uint64_t flush_count = 2;
+  uint64_t flush_size = 65536;
+  uint64_t total_size = flush_count * flush_size;
+
+  vector<uint64_t> chunk_sizes = {total_size / 32, total_size / 64};
+
+  uint64_t chunk_size = flush_size;
+  bufferlist contents;
+  ASSERT_TRUE((total_size)%chunk_size == 0);
+
+  string wal_file("wal1.log");
+
+  BlueFS::FileWriter *writer;
+  ASSERT_EQ(0, fs.open_for_write(dir_db, wal_file, &writer, false));
+  ASSERT_NE(nullptr, writer);
+  //
+  uint64_t remaining = total_size;
+  while(remaining > 0) {
+    bufferlist bl1;
+    gen_debugable_alternating(chunk_size, bl1, 'a'+ (remaining % 10));
+    fs.append_try_flush(writer, bl1.c_str(), bl1.length());
+    contents.append(bl1);
+    remaining -= chunk_size;
+  }
+  fs.fsync(writer);
+  fs.close_writer(writer);
+
+  fs.compact_log();
+  fs.umount();
+  fs.mount();
+
+  uint64_t size = 0;
+
+
+  { // test size
+    BlueFS::FileReader *reader;
+    ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
+    fs.stat(dir_db, wal_file, &size, nullptr);
+    ASSERT_EQ(reader->file->wal_flushes.size(), flush_count);
+    ASSERT_EQ(size, total_size);
+    delete reader;
+  }
+
+  BlueFS::FileReader *reader;
+  ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
+  bufferlist read_bl;
+  uint64_t offset = chunk_size / 2; 
+  uint64_t length = chunk_size;
+  fs.read(reader, offset, length, &read_bl, NULL);
+  bufferlist chunk_contents;
+  chunk_contents.substr_of(contents, offset, length);
+  ASSERT_TRUE(bl_eq(chunk_contents, read_bl));
+  delete reader;
 }
 
 TEST(BlueFS, test_wal_write_multiple_recover_partial_reads) {
@@ -1301,7 +1385,7 @@ TEST(BlueFS, test_wal_write_multiple_recover_partial_reads) {
       BlueFS::FileReader *reader;
       ASSERT_EQ(0, fs.open_for_read(dir_db, wal_file, &reader));
       fs.stat(dir_db, wal_file, &size, nullptr);
-      ASSERT_EQ(reader->file->wal_flush_count, flush_count);
+      ASSERT_EQ(reader->file->wal_flushes.size(), flush_count);
       ASSERT_EQ(size, total_size);
       delete reader;
     }
