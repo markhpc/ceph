@@ -1106,6 +1106,7 @@ public:
     DEDUP_CDC_CHUNK_SIZE,
     PG_NUM_MAX, // max pg_num
     READ_RATIO, // read ration for the read balancer work [0-100]
+    DATA_LAYOUT_REFORMATTING, // how object content layout can be reformatted
   };
 
   enum type_t {
