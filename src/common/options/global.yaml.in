@@ -1417,6 +1417,16 @@ options:
   min: 1
   max: 24
   with_legacy: true
+- name: ms_async_read_byte_budget
+  type: uint
+  level: advanced
+  desc: Maximum bytes one AsyncMessenger event processes from a large socket read before yielding
+  fmt_desc: A nonzero value limits the bytes drained by one AsyncMessenger connection
+    from a large socket read in one event-loop turn. The connection is explicitly
+    rescheduled after yielding, improving fairness between busy connections sharing
+    a worker. Zero preserves the default drain-to-EAGAIN behavior.
+  default: 0
+  with_legacy: true
 - name: ms_async_reap_threshold
   type: uint
   level: dev

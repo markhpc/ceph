@@ -249,17 +249,33 @@ ssize_t AsyncConnection::read_until(unsigned len, char *p)
   if (left > (uint64_t)recv_max_prefetch) {
     /* this was a large read, we don't prefetch for these */
     do {
-      r = read_bulk(p+state_offset, left);
+      if (read_byte_budget_enabled && read_byte_budget == 0) {
+        read_budget_exhausted = true;
+        return left;
+      }
+      const uint64_t read_len =
+        read_byte_budget_enabled ? std::min(left, read_byte_budget) : left;
+      r = read_bulk(p+state_offset, read_len);
       ldout(async_msgr->cct, 25) << __func__ << " read_bulk left is " << left << " got " << r << dendl;
       if (r < 0) {
         ldout(async_msgr->cct, 1) << __func__ << " read failed" << dendl;
         return -1;
-      } else if (r == static_cast<int>(left)) {
+      }
+      if (read_byte_budget_enabled) {
+        read_byte_budget -= r;
+      }
+      if (r == static_cast<int>(left)) {
         state_offset = 0;
         return 0;
       }
       state_offset += r;
       left -= r;
+      if (read_byte_budget_enabled) {
+        if (read_byte_budget == 0) {
+          read_budget_exhausted = true;
+          return left;
+        }
+      }
     } while (r > 0);
   } else {
     do {
@@ -389,6 +405,9 @@ void AsyncConnection::process() {
   std::lock_guard<std::mutex> l(lock);
   last_active = ceph::coarse_mono_clock::now();
   recv_start_time = ceph::mono_clock::now();
+  read_byte_budget = async_msgr->cct->_conf->ms_async_read_byte_budget;
+  read_byte_budget_enabled = read_byte_budget != 0;
+  read_budget_exhausted = false;
 
   ldout(async_msgr->cct, 20) << __func__ << dendl;
 
@@ -456,6 +475,9 @@ void AsyncConnection::process() {
         }
         logger->tinc(l_msgr_running_recv_time,
                ceph::mono_clock::now() - recv_start_time);
+        if (read_budget_exhausted) {
+          center->dispatch_event_external(read_handler);
+        }
         return;
       }
 
@@ -490,6 +512,9 @@ void AsyncConnection::process() {
         }
 	logger->tinc(l_msgr_running_recv_time,
 	    ceph::mono_clock::now() - recv_start_time);
+        if (read_budget_exhausted) {
+          center->dispatch_event_external(read_handler);
+        }
         return;
       }
       break;

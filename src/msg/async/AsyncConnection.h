@@ -223,6 +223,11 @@ private:
 
   // used only by "read_until"
   uint64_t state_offset;
+  // Per-event large-read budget. A nonzero budget lets a busy connection
+  // yield to other ready connections on the same worker before EAGAIN.
+  uint64_t read_byte_budget = 0;
+  bool read_byte_budget_enabled = false;
+  bool read_budget_exhausted = false;
   Worker *worker;
   EventCenter *center;
 
