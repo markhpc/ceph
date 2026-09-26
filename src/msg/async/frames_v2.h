@@ -209,6 +209,13 @@ public:
     return m_is_rev1;
   }
 
+  // Whether this assembler sets/verifies the DATA-frame data CRC
+  // (ms_crc_data at connection setup).  Observation only, used by the
+  // benchmark direct-receive probe.
+  bool get_with_data_crc() const {
+    return m_with_data_crc;
+  }
+
   size_t get_num_segments() const {
     ceph_assert(!m_descs.empty());
     return m_descs.size();

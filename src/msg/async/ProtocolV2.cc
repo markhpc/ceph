@@ -13,6 +13,7 @@
 #include "auth/AuthClient.h"
 #include "auth/AuthServer.h"
 #include "auth/AuthSessionHandler.h" // for struct DecryptionError
+#include "direct_rx_probe.h"
 
 #define dout_subsys ceph_subsys_ms
 #undef dout_prefix
@@ -105,6 +106,7 @@ ProtocolV2::ProtocolV2(AsyncConnection *connection)
                    &session_compression_handlers),
       rx_frame_asm(&session_stream_handlers, false, cct->_conf->ms_crc_data,
                    &session_compression_handlers),
+      benchmark_direct_rx_probe(cct->_conf->ms_benchmark_direct_rx_probe),
       next_tag(static_cast<Tag>(0)),
       keepalive(false) {
 }
@@ -1177,12 +1179,41 @@ CtPtr ProtocolV2::handle_read_frame_preamble_main(rx_buffer_t &&buffer, int r) {
       lderr(cct) << __func__ << " not in ready state!" << dendl;
       return _fault();
     }
+    if (benchmark_direct_rx_probe) {
+      probe_direct_rx_frame();
+    }
     recv_stamp = ceph_clock_now();
     state = THROTTLE_MESSAGE;
     return CONTINUE(throttle_message);
   } else {
     return read_frame_segment();
   }
+}
+
+void ProtocolV2::probe_direct_rx_frame() {
+  // Benchmark/prototype-only accounting (ms_benchmark_direct_rx_probe):
+  // purely observational.  The frame keeps flowing through the stock
+  // staged-bufferlist copy path unchanged; this only reads the preamble
+  // descriptors that were parsed anyway, classifies preamble-visible
+  // direct-path POTENTIAL, and bumps counters.  It deliberately does not
+  // claim full direct-read eligibility: a one-op plain OSD READ and a
+  // target match cannot be proven here, and non-empty FRONT/MIDDLE
+  // metadata (e.g. MOSDOpReply front) is tolerated -- a future direct
+  // path delivers the DATA segment and preserves those segments staged.
+  ceph::msgr::v2::DirectRxFrameDesc desc;
+  desc.crypto_active = session_stream_handlers.rx != nullptr;
+  desc.compression_active = session_compression_handlers.rx != nullptr;
+  desc.data_crc = rx_frame_asm.get_with_data_crc();
+  desc.num_segments = rx_frame_asm.get_num_segments();
+  desc.expected_header_len = sizeof(ceph_msg_header2);
+  const auto segment_len = [this](std::size_t idx) -> uint32_t {
+    return idx < rx_frame_asm.get_num_segments()
+               ? rx_frame_asm.get_segment_logical_len(idx)
+               : 0;
+  };
+  desc.header_len = segment_len(ceph::msgr::v2::SegmentIndex::Msg::HEADER);
+  desc.data_len = segment_len(ceph::msgr::v2::SegmentIndex::Msg::DATA);
+  ceph::msgr::v2::record_direct_rx_probe_frame(connection->logger, desc);
 }
 
 CtPtr ProtocolV2::handle_read_frame_dispatch() {

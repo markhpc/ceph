@@ -14,6 +14,7 @@
  */
 
 #include "Objecter.h"
+#include "reply_shape_probe.h"
 #include "Striper.h"
 
 #include <algorithm>
@@ -192,6 +193,19 @@ enum {
   l_osdc_replica_read_completed,
 
   l_osdc_split_op_reads,
+
+  // Benchmark/prototype-only reply output-shape census
+  // (ms_benchmark_direct_rx_probe; see osdc/reply_shape_probe.h).
+  // Copy-elision upper bound, not direct-receive eligibility.
+  l_osdc_reply_probe_copy_frames,
+  l_osdc_reply_probe_copy_bytes,
+  l_osdc_reply_probe_claim_frames,
+  l_osdc_reply_probe_claim_bytes,
+  l_osdc_reply_probe_claim_empty_frames,
+  l_osdc_reply_probe_claim_length_frames,
+  l_osdc_reply_probe_claim_multipart_frames,
+  l_osdc_reply_probe_no_output_frames,
+  l_osdc_reply_probe_no_output_bytes,
 
   l_osdc_last,
 };
@@ -415,6 +429,56 @@ void Objecter::init()
 			"Operations completed by replica");
     pcb.add_u64_counter(l_osdc_split_op_reads, "split_op_reads",
                     "Client read ops split by SplitOp");
+
+    // Benchmark/prototype-only reply output-shape census
+    // (ms_benchmark_direct_rx_probe; osdc/reply_shape_probe.h).  These
+    // bound the Objecter-layer copy a future copy-elision could remove;
+    // they make no direct-receive eligibility and no end-to-end
+    // copy-freedom claim.
+    pcb.add_u64_counter(l_osdc_reply_probe_copy_frames,
+			"reply_probe_copy_frames",
+			"Benchmark probe: read replies whose payload was "
+			"copied into the caller's pre-sized outbl (the only "
+			"Objecter-layer copy elision could remove here)");
+    pcb.add_u64_counter(l_osdc_reply_probe_copy_bytes,
+			"reply_probe_copy_bytes",
+			"Benchmark probe: payload bytes copied into "
+			"pre-sized outbl (Objecter-layer copy-elision upper "
+			"bound)",
+			NULL, 0, unit_t(UNIT_BYTES));
+    pcb.add_u64_counter(l_osdc_reply_probe_claim_frames,
+			"reply_probe_claim_frames",
+			"Benchmark probe: read replies delivered by "
+			"claim_data (buffers moved: avoids an Objecter-"
+			"layer copy, not an end-to-end copy-freedom "
+			"claim)");
+    pcb.add_u64_counter(l_osdc_reply_probe_claim_bytes,
+			"reply_probe_claim_bytes",
+			"Benchmark probe: payload bytes delivered by "
+			"claim_data",
+			NULL, 0, unit_t(UNIT_BYTES));
+    pcb.add_u64_counter(l_osdc_reply_probe_claim_empty_frames,
+			"reply_probe_claim_empty_frames",
+			"Benchmark probe: claim_data replies, caller "
+			"outbl had zero length (no pre-sized bytes to "
+			"copy into)");
+    pcb.add_u64_counter(l_osdc_reply_probe_claim_length_frames,
+			"reply_probe_claim_length_frames",
+			"Benchmark probe: claim_data replies, non-zero "
+			"outbl length did not match payload length");
+    pcb.add_u64_counter(l_osdc_reply_probe_claim_multipart_frames,
+			"reply_probe_claim_multipart_frames",
+			"Benchmark probe: claim_data replies, multi-buffer "
+			"payload");
+    pcb.add_u64_counter(l_osdc_reply_probe_no_output_frames,
+			"reply_probe_no_output_frames",
+			"Benchmark probe: replies carrying payload with no "
+			"top-level pre-sized outbl destination");
+    pcb.add_u64_counter(l_osdc_reply_probe_no_output_bytes,
+			"reply_probe_no_output_bytes",
+			"Benchmark probe: payload bytes with no top-level "
+			"pre-sized outbl destination",
+			NULL, 0, unit_t(UNIT_BYTES));
 
     logger = pcb.create_perf_counters();
     cct->get_perfcounters_collection()->add(logger);
@@ -3820,6 +3884,50 @@ bs::error_code Objecter::process_op_reply_handlers(Op *op, vector<OSDOp> &out_op
 }
 
 
+// Benchmark/prototype-only census (ms_benchmark_direct_rx_probe): classify
+// and count the reply payload's output shape BEFORE handle_osd_op_reply()'s
+// output branch may move or copy it.  Read-only observation; output
+// ownership, payload handling, dispatch, and completion behavior are
+// untouched.  This bounds the copy-elision opportunity at the Objecter
+// layer; it makes no direct-receive eligibility claim (see
+// osdc/reply_shape_probe.h).
+static void probe_reply_output_shape(PerfCounters* logger,
+                                     const cb::list* outbl,
+                                     const cb::list& data) {
+  using ceph::osdc::classify_reply_output_shape;
+  using ceph::osdc::ReplyOutputShape;
+  const auto shape = classify_reply_output_shape(
+      outbl != nullptr, outbl ? outbl->length() : 0,
+      data.length(), data.get_num_buffers());
+  switch (shape) {
+  case ReplyOutputShape::not_counted:
+    return;
+  case ReplyOutputShape::copy_pre_sized:
+    logger->inc(l_osdc_reply_probe_copy_frames);
+    logger->inc(l_osdc_reply_probe_copy_bytes, data.length());
+    return;
+  case ReplyOutputShape::claim_empty_outbl:
+    logger->inc(l_osdc_reply_probe_claim_frames);
+    logger->inc(l_osdc_reply_probe_claim_bytes, data.length());
+    logger->inc(l_osdc_reply_probe_claim_empty_frames);
+    return;
+  case ReplyOutputShape::claim_length_mismatch:
+    logger->inc(l_osdc_reply_probe_claim_frames);
+    logger->inc(l_osdc_reply_probe_claim_bytes, data.length());
+    logger->inc(l_osdc_reply_probe_claim_length_frames);
+    return;
+  case ReplyOutputShape::claim_multi_part:
+    logger->inc(l_osdc_reply_probe_claim_frames);
+    logger->inc(l_osdc_reply_probe_claim_bytes, data.length());
+    logger->inc(l_osdc_reply_probe_claim_multipart_frames);
+    return;
+  case ReplyOutputShape::no_pre_sized_output:
+    logger->inc(l_osdc_reply_probe_no_output_frames);
+    logger->inc(l_osdc_reply_probe_no_output_bytes, data.length());
+    return;
+  }
+}
+
 /* This function DOES put the passed message before returning */
 void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 {
@@ -3957,6 +4065,12 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
   if (op->data_offset)
     *op->data_offset = m->get_header().data_off;
 
+  // Benchmark probe census: capture the shape before the output branch
+  // below moves or copies the payload.
+  if (cct->_conf->ms_benchmark_direct_rx_probe) {
+    probe_reply_output_shape(logger, op->outbl, m->get_data());
+  }
+
   // got data?
   if (op->outbl) {
 #if 0
@@ -3964,8 +4078,11 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
       op->con->revoke_rx_buffer(op->tid);
 #endif
     auto& bl = m->get_data();
-    if (op->outbl->length() == bl.length() &&
-	bl.get_num_buffers() <= 1) {
+    // Same predicate the benchmark classifier uses (no behavior change:
+    // this is exactly the previous inline condition).
+    if (ceph::osdc::compatibility_copy_applies(op->outbl->length(),
+                                               bl.length(),
+                                               bl.get_num_buffers())) {
       // this is here to keep previous users to *relied* on getting data
       // read into existing buffers happy.  Notably,
       // libradosstriper::RadosStriperImpl::aio_read().

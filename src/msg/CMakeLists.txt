@@ -19,6 +19,7 @@ list(APPEND msg_srcs
   async/crypto_onwire.cc
   async/compression_onwire.cc
   async/frames_v2.cc
+  async/direct_rx_probe.cc
   async/net_handler.cc)
 
 if(LINUX)

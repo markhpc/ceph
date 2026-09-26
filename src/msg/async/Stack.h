@@ -225,6 +225,26 @@ enum {
   l_msgr_recv_encrypted_bytes,
   l_msgr_send_encrypted_bytes,
 
+  // Benchmark/prototype-only msgr2 direct-receive probe accounting
+  // (ms_benchmark_direct_rx_probe; see msg/async/direct_rx_probe.h).
+  // "potential" is preamble-visible direct-path potential only (session
+  // guards + DATA-carrying layout), never full direct-read eligibility: a
+  // one-op plain READ and a target match cannot be proven here.
+  // l_msgr_direct_rx_hit_frames has no writer: it is reserved for a later
+  // prototype phase and stays zero for now.
+  l_msgr_direct_rx_potential_frames,
+  l_msgr_direct_rx_potential_bytes,
+  l_msgr_direct_rx_hit_frames,
+  l_msgr_direct_rx_fallback_frames,
+  l_msgr_direct_rx_fallback_bytes,
+  l_msgr_direct_rx_fallback_crypto_frames,
+  l_msgr_direct_rx_fallback_compression_frames,
+  l_msgr_direct_rx_fallback_crc_disabled_frames,
+  l_msgr_direct_rx_fallback_layout_frames,
+  l_msgr_direct_rx_fallback_header_frames,
+  l_msgr_direct_rx_fallback_data_absent_frames,
+  l_msgr_direct_rx_fallback_data_empty_frames,
+
   l_msgr_last,
 };
 
@@ -236,6 +256,64 @@ enum {
 
   l_msgr_labeled_last,
 };
+
+/// Register the benchmark/prototype-only msgr2 direct-receive probe
+/// counters (ms_benchmark_direct_rx_probe) on plb.  Shared by Worker
+/// construction and focused unit tests.  Semantics: see the enum comment
+/// above and msg/async/direct_rx_probe.h -- "potential" is preamble-visible
+/// direct-path potential, never full direct-read eligibility, and
+/// FRONT/MIDDLE metadata never affects it.
+inline void add_direct_rx_probe_counters(PerfCountersBuilder& plb)
+{
+  plb.add_u64_counter(l_msgr_direct_rx_potential_frames,
+                      "msgr_direct_rx_potential_frames",
+                      "Benchmark probe: msgr2 MESSAGE frames with "
+                      "preamble-visible direct-path potential (not full "
+                      "eligibility)");
+  plb.add_u64_counter(l_msgr_direct_rx_potential_bytes,
+                      "msgr_direct_rx_potential_bytes",
+                      "Benchmark probe: declared DATA bytes of "
+                      "direct-path-potential frames",
+                      NULL, 0, unit_t(UNIT_BYTES));
+  plb.add_u64_counter(l_msgr_direct_rx_hit_frames,
+                      "msgr_direct_rx_hit_frames",
+                      "Benchmark probe: frames delivered by direct receive "
+                      "(reserved, always zero)");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_frames,
+                      "msgr_direct_rx_fallback_frames",
+                      "Benchmark probe: msgr2 MESSAGE frames without "
+                      "preamble direct-path potential");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_bytes,
+                      "msgr_direct_rx_fallback_bytes",
+                      "Benchmark probe: declared DATA bytes of frames "
+                      "without direct-path potential",
+                      NULL, 0, unit_t(UNIT_BYTES));
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_crypto_frames,
+                      "msgr_direct_rx_fallback_crypto_frames",
+                      "Benchmark probe: rejected frames, encrypted session");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_compression_frames,
+                      "msgr_direct_rx_fallback_compression_frames",
+                      "Benchmark probe: rejected frames, compressed "
+                      "session");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_crc_disabled_frames,
+                      "msgr_direct_rx_fallback_crc_disabled_frames",
+                      "Benchmark probe: rejected frames, data crc disabled");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_layout_frames,
+                      "msgr_direct_rx_fallback_layout_frames",
+                      "Benchmark probe: rejected frames, malformed segment "
+                      "layout");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_header_frames,
+                      "msgr_direct_rx_fallback_header_frames",
+                      "Benchmark probe: rejected frames, absent/invalid "
+                      "header segment");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_data_absent_frames,
+                      "msgr_direct_rx_fallback_data_absent_frames",
+                      "Benchmark probe: rejected frames, no DATA segment");
+  plb.add_u64_counter(l_msgr_direct_rx_fallback_data_empty_frames,
+                      "msgr_direct_rx_fallback_data_empty_frames",
+                      "Benchmark probe: rejected frames, empty DATA "
+                      "segment");
+}
 
 class Worker {
   std::mutex init_lock;
@@ -282,6 +360,8 @@ class Worker {
 
     plb.add_u64_counter(l_msgr_recv_encrypted_bytes, "msgr_recv_encrypted_bytes", "Network received encrypted bytes", NULL, 0, unit_t(UNIT_BYTES));
     plb.add_u64_counter(l_msgr_send_encrypted_bytes, "msgr_send_encrypted_bytes", "Network sent encrypted bytes", NULL, 0, unit_t(UNIT_BYTES));
+
+    add_direct_rx_probe_counters(plb);
 
     perf_logger = plb.create_perf_counters();
     cct->get_perfcounters_collection()->add(perf_logger);

@@ -15,12 +15,16 @@
 
 #include "msg/async/frames_v2.h"
 
+#include <memory>
 #include <numeric>
 #include <ostream>
 #include <string>
 #include <tuple>
 
 #include "msg/async/compression_meta.h"
+#include "msg/async/direct_rx_probe.h"
+#include "msg/async/Stack.h"
+#include "common/perf_counters.h"
 #include "auth/Auth.h"
 #include "common/ceph_argparse.h"
 #include "global/global_init.h"
@@ -468,6 +472,283 @@ INSTANTIATE_TEST_SUITE_P(
     RoundTripPerfTests, RoundTripPerfTest, ::testing::Combine(
         ::testing::ValuesIn(round_trip_perf_instances),
         ::testing::ValuesIn(modes)));
+
+// ---------------------------------------------------------------------------
+// Benchmark-only direct-receive probe (ms_benchmark_direct_rx_probe):
+// deterministic, cluster-free coverage of the preamble-visible
+// direct-path-potential classification and of counter accounting through a
+// real PerfCounters logger registered exactly the way the async Worker
+// registers it.  The probe never touches payload handling and never claims
+// full direct-read eligibility: "potential" only means the session guards
+// pass and the frame declares a valid DATA-carrying layout.  FRONT/MIDDLE
+// metadata segments (e.g. a MOSDOpReply front) are preserved for a future
+// direct DATA path and must never disqualify a frame.
+// ---------------------------------------------------------------------------
+
+static DirectRxFrameDesc make_probe_potential(uint32_t data_len) {
+  DirectRxFrameDesc f;
+  // plaintext, uncompressed, data-crc-enabled session defaults:
+  f.data_crc = true;
+  // valid envelope-header segment plus one declared, non-empty DATA
+  // segment; FRONT/MIDDLE never enter the descriptor:
+  f.num_segments = DIRECT_RX_MSG_NUM_SEGMENTS;
+  f.header_len = sizeof(ceph_msg_header2);
+  f.expected_header_len = sizeof(ceph_msg_header2);
+  f.data_len = data_len;
+  return f;
+}
+
+TEST(DirectRxProbe, DataCarryingFrameHasPotential) {
+  EXPECT_EQ(classify_direct_rx_frame(make_probe_potential(4096)),
+            DirectRxRejection::none);
+}
+
+TEST(DirectRxProbe, SessionGuards) {
+  auto f = make_probe_potential(4096);
+  f.crypto_active = true;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::session_crypto_active);
+  f.crypto_active = false;
+  f.compression_active = true;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::session_compression_active);
+  f.compression_active = false;
+  f.data_crc = false;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::data_crc_disabled);
+}
+
+TEST(DirectRxProbe, FrameLayoutRejections) {
+  // malformed layout: declared segment count outside 1..4
+  auto f = make_probe_potential(4096);
+  f.num_segments = 0;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::segment_layout_invalid);
+  f = make_probe_potential(4096);
+  f.num_segments = DIRECT_RX_MSG_NUM_SEGMENTS + 1;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::segment_layout_invalid);
+
+  // absent/invalid header segment
+  f = make_probe_potential(4096);
+  f.header_len = sizeof(ceph_msg_header2) - 1;  // truncated envelope header
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::header_segment_invalid);
+  f = make_probe_potential(4096);
+  f.expected_header_len = 0;  // degenerate call site: header unprovable
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::header_segment_invalid);
+
+  // absent DATA segment: trailing empty segments are trimmed, so a
+  // metadata-only reply legitimately declares fewer than 4 segments
+  f = make_probe_potential(4096);
+  f.num_segments = 3;
+  f.data_len = 0;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::data_segment_absent);
+
+  // declared but empty DATA segment is a distinct rejection
+  EXPECT_EQ(classify_direct_rx_frame(make_probe_potential(0)),
+            DirectRxRejection::data_segment_empty);
+}
+
+TEST(DirectRxProbe, ReasonPrecedence) {
+  // first matching rule wins: session crypto, session compression,
+  // data CRC, layout, header, DATA presence, DATA emptiness
+  auto f = make_probe_potential(0);
+  f.num_segments = 9;
+  f.crypto_active = true;
+  f.compression_active = true;
+  f.data_crc = false;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::session_crypto_active);
+  f.crypto_active = false;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::session_compression_active);
+  f.compression_active = false;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::data_crc_disabled);
+  f.data_crc = true;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::segment_layout_invalid);
+  f.num_segments = DIRECT_RX_MSG_NUM_SEGMENTS;
+  f.expected_header_len = 0;
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::header_segment_invalid);
+  f.expected_header_len = sizeof(ceph_msg_header2);
+  f.num_segments = 1;  // header only: header valid, DATA absent
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::data_segment_absent);
+  f.num_segments = DIRECT_RX_MSG_NUM_SEGMENTS;  // DATA declared but empty
+  EXPECT_EQ(classify_direct_rx_frame(f),
+            DirectRxRejection::data_segment_empty);
+}
+
+TEST(DirectRxProbe, RejectionNames) {
+  EXPECT_STREQ(direct_rx_rejection_name(DirectRxRejection::none), "none");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::session_crypto_active),
+               "session_crypto_active");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::session_compression_active),
+               "session_compression_active");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::data_crc_disabled),
+               "data_crc_disabled");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::segment_layout_invalid),
+               "segment_layout_invalid");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::header_segment_invalid),
+               "header_segment_invalid");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::data_segment_absent),
+               "data_segment_absent");
+  EXPECT_STREQ(direct_rx_rejection_name(
+                   DirectRxRejection::data_segment_empty),
+               "data_segment_empty");
+}
+
+// A real msgr2.1 crc-mode frame with non-empty FRONT and MIDDLE metadata
+// (MOSDOpReply-style) is disassembled exactly as far as ProtocolV2 does at
+// preamble time, and classifies as potential: the probe never looks at the
+// metadata segments.  The metadata-only variant, whose trailing empty DATA
+// segment gets trimmed by the assembler, rejects as data_segment_absent.
+TEST(DirectRxProbe, RealFramePreambleWithMetadataKeepsPotential) {
+  ceph::crypto::onwire::rxtx_t tx_crypto, rx_crypto;
+  ceph::compression::onwire::rxtx_t tx_comp, rx_comp;
+  FrameAssembler tx_asm(&tx_crypto, true, true, &tx_comp);
+  FrameAssembler rx_asm(&rx_crypto, true, true, &rx_comp);
+
+  const auto probe_desc = [&rx_asm]() {
+    DirectRxFrameDesc desc;
+    desc.data_crc = rx_asm.get_with_data_crc();
+    desc.num_segments = rx_asm.get_num_segments();
+    desc.expected_header_len = sizeof(ceph_msg_header2);
+    const auto len = [&rx_asm](std::size_t i) -> uint32_t {
+      return i < rx_asm.get_num_segments()
+                 ? rx_asm.get_segment_logical_len(i)
+                 : 0;
+    };
+    desc.header_len = len(SegmentIndex::Msg::HEADER);
+    desc.data_len = len(SegmentIndex::Msg::DATA);
+    return desc;
+  };
+
+  ceph_msg_header2 hdr{};
+  auto reply = MessageFrame::Encode(hdr, make_bufferlist(64, 'F'),
+                                    make_bufferlist(32, 'M'),
+                                    make_bufferlist(4096, 'D'));
+  auto frame_bl = reply.get_buffer(tx_asm);
+  bufferlist preamble_bl;
+  frame_bl.splice(0, rx_asm.get_preamble_onwire_len(), &preamble_bl);
+  ASSERT_EQ(rx_asm.disassemble_preamble(preamble_bl), Tag::MESSAGE);
+
+  auto desc = probe_desc();
+  EXPECT_EQ(desc.num_segments, DIRECT_RX_MSG_NUM_SEGMENTS);
+  EXPECT_EQ(desc.header_len, sizeof(ceph_msg_header2));
+  EXPECT_EQ(desc.data_len, 4096u);
+  EXPECT_EQ(classify_direct_rx_frame(desc), DirectRxRejection::none);
+
+  auto ack = MessageFrame::Encode(hdr, make_bufferlist(64, 'F'),
+                                  make_bufferlist(0, 'M'),
+                                  make_bufferlist(0, 'D'));
+  auto ack_bl = ack.get_buffer(tx_asm);
+  bufferlist ack_preamble;
+  ack_bl.splice(0, rx_asm.get_preamble_onwire_len(), &ack_preamble);
+  ASSERT_EQ(rx_asm.disassemble_preamble(ack_preamble), Tag::MESSAGE);
+
+  auto ack_desc = probe_desc();
+  EXPECT_EQ(ack_desc.num_segments, 2u);  // HEADER + FRONT, DATA trimmed
+  EXPECT_EQ(classify_direct_rx_frame(ack_desc),
+            DirectRxRejection::data_segment_absent);
+}
+
+TEST(DirectRxProbe, CounterAccountingThroughPerfCounters) {
+  // create_perf_counters() asserts every slot in (first, last) is
+  // registered; the production Worker registers the entire range, so the
+  // test instead builds a tight window over exactly the probe counters.
+  // The pin below requires the probe block to end at l_msgr_last with no
+  // gaps, so a future counter cannot slip in unregistered.
+  static_assert(l_msgr_direct_rx_potential_frames < l_msgr_last);
+  static_assert(l_msgr_direct_rx_fallback_data_empty_frames + 1 ==
+                l_msgr_last);
+  PerfCountersBuilder plb(g_ceph_context,
+                          "AsyncMessenger::Worker-direct-rx-probe-test",
+                          l_msgr_direct_rx_potential_frames - 1,
+                          l_msgr_last);
+  add_direct_rx_probe_counters(plb);
+  std::unique_ptr<PerfCounters> logger(plb.create_perf_counters());
+  ASSERT_TRUE(g_ceph_context->_conf->perf);  // accumulation gate
+
+  // documented no-op, must not crash or touch anything
+  record_direct_rx_probe_frame(nullptr, make_probe_potential(64));
+
+  // potential frames still take the stock copy path in this phase: the
+  // only delivery counter stays structurally zero
+  record_direct_rx_probe_frame(logger.get(), make_probe_potential(4096));
+  record_direct_rx_probe_frame(logger.get(), make_probe_potential(8192));
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_potential_frames), 2u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_potential_bytes), 12288u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_hit_frames), 0u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_frames), 0u);
+
+  auto crypto = make_probe_potential(100);
+  crypto.crypto_active = true;
+  record_direct_rx_probe_frame(logger.get(), crypto);
+
+  auto layout = make_probe_potential(0);
+  layout.num_segments = 0;
+  record_direct_rx_probe_frame(logger.get(), layout);
+
+  auto header = make_probe_potential(7);
+  header.header_len = sizeof(ceph_msg_header2) - 1;
+  record_direct_rx_probe_frame(logger.get(), header);
+
+  auto absent = make_probe_potential(0);
+  absent.num_segments = 3;
+  record_direct_rx_probe_frame(logger.get(), absent);
+
+  record_direct_rx_probe_frame(logger.get(), make_probe_potential(0));
+
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_frames), 5u);
+  // DATA bytes are attributed only when the layout declares a DATA
+  // segment: crypto rejection (100) and header rejection (7)
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_bytes), 107u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_crypto_frames), 1u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_layout_frames), 1u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_header_frames), 1u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_data_absent_frames), 1u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_data_empty_frames), 1u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_compression_frames), 0u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_fallback_crc_disabled_frames), 0u);
+
+  // potential stays exact: no double counting between the classes
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_potential_frames), 2u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_potential_bytes), 12288u);
+
+  // accounting invariants: the reason counters sum to the fallback frames,
+  // potential + fallback equals every recorded frame, and hits stay zero
+  const uint64_t reasons =
+      logger->get(l_msgr_direct_rx_fallback_crypto_frames) +
+      logger->get(l_msgr_direct_rx_fallback_compression_frames) +
+      logger->get(l_msgr_direct_rx_fallback_crc_disabled_frames) +
+      logger->get(l_msgr_direct_rx_fallback_layout_frames) +
+      logger->get(l_msgr_direct_rx_fallback_header_frames) +
+      logger->get(l_msgr_direct_rx_fallback_data_absent_frames) +
+      logger->get(l_msgr_direct_rx_fallback_data_empty_frames);
+  EXPECT_EQ(reasons, logger->get(l_msgr_direct_rx_fallback_frames));
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_potential_frames) +
+                logger->get(l_msgr_direct_rx_fallback_frames),
+            7u);
+  EXPECT_EQ(logger->get(l_msgr_direct_rx_hit_frames), 0u);
+}
+
+TEST(DirectRxProbe, BenchmarkProbeIsDisabledByDefault) {
+  // the shipped default must be off: unarmed/default runs reach no probe
+  // call site, so every counter above stays zero
+  ASSERT_FALSE(g_ceph_context->_conf->ms_benchmark_direct_rx_probe);
+}
 
 }  // namespace ceph::msgr::v2
 

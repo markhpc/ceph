@@ -113,6 +113,10 @@ private:
   ceph::msgr::v2::FrameAssembler tx_frame_asm;
   ceph::msgr::v2::FrameAssembler rx_frame_asm;
 
+  // Benchmark/prototype-only receive accounting; latched at construction
+  // from ms_benchmark_direct_rx_probe (off by default).
+  bool benchmark_direct_rx_probe;
+
   ceph::bufferlist rx_preamble;
   ceph::bufferlist rx_epilogue;
   ceph::msgr::v2::segment_bls_t rx_segments_data;
@@ -196,6 +200,7 @@ private:
   Ct<ProtocolV2> *handle_read_frame_dispatch();
   Ct<ProtocolV2> *handle_frame_payload();
   Ct<ProtocolV2> *finish_compression();
+  void probe_direct_rx_frame();
 
   Ct<ProtocolV2> *ready();
 

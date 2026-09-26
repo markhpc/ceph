@@ -1171,6 +1171,15 @@ options:
   desc: Set and/or verify crc32c checksum on data payload sent over network
   default: true
   with_legacy: true
+- name: ms_benchmark_direct_rx_probe
+  type: bool
+  level: dev
+  desc: Benchmark/prototype-only instrumentation switch for the async-rx-direct experiment; enables the msgr2 receive direct-path-potential probe and the Objecter reply output-shape copy-elision census; neither is a direct-read eligibility claim
+  fmt_desc: Local experimental fork instrumentation only. Never alters payload handling; frames and replies keep the stock path and no direct delivery exists. The msgr2 probe is latched per connection when ProtocolV2 is constructed; the Objecter census is checked per reply and toggles live. Enable only for benchmark runs.
+  default: false
+  with_legacy: true
+  see_also:
+  - ms_crc_data
 - name: ms_crc_header
   type: bool
   level: dev
